@@ -1,17 +1,17 @@
-"""Utilities for fetching ORCID publication data.
+# Helper functions for ORCID data fetching and processing.
+# Queries the public ORCID API (v3), no key necessary.
+#
+# Provided functions:
+# - fetch_orcid_data(orcid, timeout=10): Fetches publication data for a given ORCID iD.
+# - format_timestamp(timestamp, freshness=False): Formats a timestamp to human readable string.
 
-Provides `fetch_orcid_publications(orcid, timeout=10)` which returns a
-dictionary containing a list of publications for the given ORCID iD using
-the public ORCID API (v3.0).
-
-The function is intentionally lightweight and depends only on `requests`.
-"""
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 import re
-
 import requests
 
+# Format a timestamp (in milliseconds since epoch) to a human-readable date string.
+# If freshness is True, append a colored dot indicating how recent the date is.
 def format_timestamp(timestamp: str, freshness: bool = False) -> str:
 	output_string= datetime.fromtimestamp(float(timestamp)/1000).strftime('%Y-%m-%d')
 	if freshness:
@@ -64,7 +64,7 @@ def _extract_doi_from_external_id(item: Dict[str, Any]) -> Optional[str]:
 
 	return None
 
-
+# Processes external IDs from a work summary and extracts DOIs where available.
 def _extract_external_ids(summary: Dict[str, Any]) -> List[Dict[str, str]]:
 	out: List[Dict[str, str]] = []
 	ext = summary.get("external-ids") or {}
@@ -80,23 +80,18 @@ def _extract_external_ids(summary: Dict[str, Any]) -> List[Dict[str, str]]:
 		})
 	return out
 
-
+# Fetches ORCID data including publications for a given ORCID iD.
+# Args:
+#   orcid: ORCID iD in dashed 16-digit form.
+#   timeout: Request timeout in seconds.
+# Returns:
+#   A dict with keys: 
+# 		- orcid : the queried ORCID iD
+# 		- name : researcher's full name
+# 		- count : number of publications
+# 		- publications : list of publications
+# 		- raw : the raw JSON returned by the API
 def fetch_orcid_data(orcid: str, timeout: int = 10) -> Dict[str, Any]:
-	"""Fetch publications for an ORCID iD from the public ORCID API.
-
-	Args:
-	  orcid: ORCID iD in dashed 16-digit form.
-	  timeout: Request timeout in seconds.
-
-	Returns:
-	  A dict with keys: `orcid`, `count`, `publications` (list), and `raw`
-	  (the raw JSON returned by ORCID).
-
-	Raises:
-	  ValueError: if ORCID format is invalid.
-	  requests.HTTPError: if the HTTP request fails with non-200 status.
-	  requests.RequestException: for other network-related errors.
-	"""
 	url = f"https://pub.orcid.org/v3.0/{orcid}/record"
 	headers = {"Accept": "application/json"}
 
@@ -120,8 +115,7 @@ def fetch_orcid_data(orcid: str, timeout: int = 10) -> Dict[str, Any]:
 	publications: List[Dict[str, Any]] = []
 
 	for group in groups or []:
-		# Each group may contain multiple "work-summary" entries; pick the
-		# first summary as the representative.
+		# Each group contains grouped work objects. The first one is the one picked by the user.
 		summaries = group.get("work-summary") or []
 		if not summaries:
 			continue
