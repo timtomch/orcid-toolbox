@@ -7,10 +7,23 @@ the public ORCID API (v3.0).
 The function is intentionally lightweight and depends only on `requests`.
 """
 from typing import Any, Dict, List, Optional
+from datetime import datetime
 import re
 
 import requests
 
+def format_timestamp(timestamp: str, freshness: bool = False) -> str:
+	output_string= datetime.fromtimestamp(float(timestamp)/1000).strftime('%Y-%m-%d')
+	if freshness:
+		delta = datetime.now() - datetime.fromtimestamp(float(timestamp)/1000)
+		days = delta.days
+		if days > 365 * 2:
+			output_string += " 🔴"
+		elif days > 365:
+			output_string += " 🟡"
+		else:
+			output_string += " 🟢"
+	return output_string
 
 _DOI_RE = re.compile(r"(10\.\d{4,9}/\S+)", re.IGNORECASE)
 
@@ -119,6 +132,8 @@ def fetch_orcid_data(orcid: str, timeout: int = 10) -> Dict[str, Any]:
 
 		pub: Dict[str, Any] = {
 			"put-code": summary.get("put-code"),
+			"modified-date": format_timestamp(summary.get("last-modified-date", {}).get("value")) if summary.get("last-modified-date") else None,
+			"modified-by": summary.get("source", {}).get("source-name", {}).get("value"),
 			"title": _safe_get_title(summary),
 			"type": summary.get("type"),
 			"journal-title": summary.get("journal-title"),
