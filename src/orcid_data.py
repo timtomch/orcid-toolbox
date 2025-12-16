@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime
 import re
 import requests
+import pandas as pd
 
 # Format a timestamp (in milliseconds since epoch) to a human-readable date string.
 # If freshness is True, append a colored dot indicating how recent the date is.
@@ -85,20 +86,34 @@ def _extract_external_ids(summary: Dict[str, Any]) -> List[Dict[str, str]]:
 #   orcid: ORCID iD in dashed 16-digit form.
 #   timeout: Request timeout in seconds.
 # Returns:
-#   A dict with keys: 
-# 		- orcid : the queried ORCID iD
-# 		- name : researcher's full name
-# 		- count : number of publications
-# 		- publications : list of publications
-# 		- raw : the raw JSON returned by the API
-def fetch_orcid_data(orcid: str, timeout: int = 10) -> Dict[str, Any]:
+#   A tuple of (DataFrame, raw_json) where:
+#   - DataFrame contains publication data
+#   - raw_json is the full API response JSON object (or None if error)
+def fetch_orcid_data(orcid: str, timeout: int = 10) -> tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
 	url = f"https://pub.orcid.org/v3.0/{orcid}/record"
 	headers = {"Accept": "application/json"}
 
 	resp = requests.get(url, headers=headers, timeout=timeout)
 	if resp.status_code == 404:
 		# No record found for ORCID -> return empty result
-		return {"orcid": orcid, "name": "", "count": 0, "publications": [], "raw": None}
+		empty_df = pd.DataFrame(
+			columns=[
+				"put-code",
+				"modified-date",
+				"modified-by",
+				"title",
+				"type",
+				"journal-title",
+				"publication-date",
+				"external-ids",
+				"visibility",
+				"url",
+				"doi",
+				"orcid",
+				"name",
+			]
+		)
+		return (empty_df, None)
 	try:
 		resp.raise_for_status()
 	except requests.HTTPError:
@@ -130,8 +145,8 @@ def fetch_orcid_data(orcid: str, timeout: int = 10) -> Dict[str, Any]:
 			"modified-by": summary.get("source", {}).get("source-name", {}).get("value"),
 			"title": _safe_get_title(summary),
 			"type": summary.get("type"),
-			"journal-title": summary.get("journal-title"),
-			"publication-date": summary.get("publication-date"),
+			"journal-title": summary.get("journal-title", {}).get("value") if summary.get("journal-title") else None,
+			"publication-year": summary.get("publication-date", {}).get("year", {}).get("value") if summary.get("publication-date") else None,
 			"external-ids": _extract_external_ids(summary),
 			"visibility": summary.get("visibility"),
 			"url": summary.get("url", {}).get("value") if summary.get("url") else None,
@@ -139,4 +154,29 @@ def fetch_orcid_data(orcid: str, timeout: int = 10) -> Dict[str, Any]:
 		}
 		publications.append(pub)
 
-	return {"orcid": orcid, "name": researcher_name, "count": len(publications), "publications": publications, "raw": data}
+	# Build a DataFrame from the extracted publications
+	df = pd.DataFrame(publications)
+	# Add metadata columns for convenience
+	if not df.empty:
+		df["orcid"] = orcid
+		df["name"] = researcher_name
+	else:
+		# Ensure an empty DataFrame has the expected columns
+		df = pd.DataFrame(
+			columns=[
+				"put-code",
+				"modified-date",
+				"modified-by",
+				"title",
+				"type",
+				"journal-title",
+				"publication-date",
+				"external-ids",
+				"visibility",
+				"url",
+				"doi",
+				"orcid",
+				"name",
+			]
+		)
+	return (df, data)

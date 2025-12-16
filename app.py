@@ -41,51 +41,48 @@ if orcid_input:
         st.stop()
 
     with st.spinner('Chargement...'):
-        data = fetch_orcid_data(orcid_input)
+        df, raw = fetch_orcid_data(orcid_input)
+        person_name = df['name'].iloc[0] if not df.empty and 'name' in df.columns else ''
+        works_count = len(df)
     
     with tab_works:
-        if data.get("count", 0) > 0 and data.get("publications"):
+        if works_count > 0:
             with st.sidebar:
                 st.success(f"Données ORCID OK {orcid_input}")
 
-            st.header(f"{data['count']} travaux trouvés pour {data['name']}")
-
-            for index, row in enumerate(data['publications'], start=1):
-                # A container for each publications
-                with st.container(border=True):
-                    st.subheader(f"{index}. {row['title']}")
-                    if row.get('doi'):
-                        st.link_button(f"DOI: {row['doi']}", "https://doi.org/"+row['doi'])
-                    
-                    st.write(f"Type: {row.get('type', 'N/A')}")
-                    st.write(f"Dernière mise à jour: {row.get('modified-date')} par {row.get('modified-by', 'N/A')}")
+            st.header(f"{works_count} travaux trouvés pour {person_name}")
+            # Show a simple table of works
+            try:
+                st.dataframe(df)
+            except Exception:
+                st.write("Travaux disponibles")
 
     with tab_summary:
-        st.header(f"Résumé du profil ORCID de {data['name']} ({orcid_input})")
+        st.header(f"Résumé du profil ORCID de {person_name} ({orcid_input})")
 
-        st.link_button(f"Voir profil :material/open_in_new:", data['raw'].get('orcid-identifier', {}).get('uri'))
+        st.link_button(f"Voir profil :material/open_in_new:", raw.get('orcid-identifier', {}).get('uri'))
     
-        st.write(f"Créé le: {format_timestamp(data['raw'].get('history', {}).get('submission-date', {}).get('value'))}")
+        st.write(f"Créé le: {format_timestamp(raw.get('history', {}).get('submission-date', {}).get('value'))}")
         
         summary_works = {
-            "count": data['count'],
-            "last_modified": format_timestamp(data['raw'].get('activities-summary', {}).get('works', {}). get('last-modified-date', {}).get('value'),True)
-            } if data['raw'].get('activities-summary', {}).get('works', {}).get('last-modified-date') else None
+            "count": works_count,
+            "last_modified": format_timestamp(raw.get('activities-summary', {}).get('works', {}). get('last-modified-date', {}).get('value'),True)
+            } if raw.get('activities-summary', {}).get('works', {}).get('last-modified-date') else None
         
         summary_employments = {
-            "count": data['raw'].get('activities-summary', {}).get('employments').get('affiliation-group', []).__len__(),
-            "last_modified": format_timestamp(data['raw'].get('activities-summary', {}).get('employments', {}). get('last-modified-date', {}).get('value'))
-            } if data['raw'].get('activities-summary', {}).get('employments', {}).get('last-modified-date') else None
+            "count": raw.get('activities-summary', {}).get('employments').get('affiliation-group', []).__len__(),
+            "last_modified": format_timestamp(raw.get('activities-summary', {}).get('employments', {}). get('last-modified-date', {}).get('value'))
+            } if raw.get('activities-summary', {}).get('employments', {}).get('last-modified-date') else None
         
         summary_educations = {
-            "count": data['raw'].get('activities-summary', {}).get('educations').get('affiliation-group', []).__len__(),
-            "last_modified": format_timestamp(data['raw'].get('activities-summary', {}).get('educations', {}). get('last-modified-date', {}).get('value'))
-            } if data['raw'].get('activities-summary', {}).get('educations', {}).get('last-modified-date') else None
+            "count": raw.get('activities-summary', {}).get('educations').get('affiliation-group', []).__len__(),
+            "last_modified": format_timestamp(raw.get('activities-summary', {}).get('educations', {}). get('last-modified-date', {}).get('value'))
+            } if raw.get('activities-summary', {}).get('educations', {}).get('last-modified-date') else None
         
         summary_fundings = {
-            "count": data['raw'].get('activities-summary', {}).get('fundings').get('affiliation-group', []).__len__(),
-            "last_modified": format_timestamp(data['raw'].get('activities-summary', {}).get('fundings', {}). get('last-modified-date', {}).get('value'),True)
-            } if data['raw'].get('activities-summary', {}).get('fundings', {}).get('last-modified-date') else None
+            "count": raw.get('activities-summary', {}).get('fundings').get('affiliation-group', []).__len__(),
+            "last_modified": format_timestamp(raw.get('activities-summary', {}).get('fundings', {}). get('last-modified-date', {}).get('value'),True)
+            } if raw.get('activities-summary', {}).get('fundings', {}).get('last-modified-date') else None
 
 
         updated_table = {
@@ -97,14 +94,14 @@ if orcid_input:
                 ":material/docs: Travaux"
             ],
             "Complété": [
-                "✅" if data['raw'].get('person', {}).get('name') else "❌",
+                "✅" if raw.get('person', {}).get('name') else "❌",
                 f"✅ ({summary_employments['count']})" if summary_employments else "❌",
                 f"✅ ({summary_educations['count']})" if summary_educations else "❌",
                 f"✅ ({summary_fundings['count']})" if summary_fundings else "❌",
                 f"✅ ({summary_works['count']})" if summary_works else "❌"
             ],
             "Dernière modification": [
-                format_timestamp(data['raw'].get('person', {}).get('last-modified-date', {}).get('value')),
+                format_timestamp(raw.get('person', {}).get('last-modified-date', {}).get('value')),
                 summary_employments['last_modified'] if summary_employments else "N/A",
                 summary_educations['last_modified'] if summary_educations else "N/A",
                 summary_fundings['last_modified'] if summary_fundings else "N/A",
