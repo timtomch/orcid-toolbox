@@ -5,15 +5,13 @@ from src.orcid_data import fetch_orcid_data, format_timestamp
 st.set_page_config(page_title="Boîte à outils ORCID", page_icon=":toolbox:", layout="wide", initial_sidebar_state="expanded")
 
 with st.sidebar:
-    st.header(":rotating_light: Expérimental!")
+    st.header(":toolbox: Boîte à outils ORCID")
     st.markdown('''
     Cette application réunit plusieurs outils pour interagir avec les données ORCID.
     ''')
 
     st.header("Statut")
 
-
-st.title(":toolbox: Boîte à outils ORCID")
 
 if st.query_params and "tab" in st.query_params and st.query_params["tab"] in ["activites", "resume", "suggestions"]:
     match st.query_params["tab"]:
@@ -75,10 +73,30 @@ if 'orcid_list' in locals() and orcid_list is not None:
                 with st.sidebar:
                     st.success(f"Données ORCID OK {orcid_input}")
 
-                st.header(f"{works_count} travaux trouvés pour {person_name}")
+                col1, col2 = st.columns([4,1],vertical_alignment="bottom")
+                with col1:
+                    st.header(f"{works_count} travaux trouvés pour {person_name}")
+                with col2:
+                    st.link_button(f"Voir profil {orcid_input} :material/open_in_new:", raw.get('orcid-identifier', {}).get('uri'))     
+
+                # Add an option to filter by type
+                if 'type' in df.columns:
+                    types = sorted(df['type'].dropna().unique().tolist())
+                    selected_types = st.multiselect(
+                        "Filtrer par type:",
+                        types,
+                        placeholder="Sélectionnez les types de travaux à afficher"
+                        )
+                    if selected_types:
+                        filtered_df = df[df['type'].isin(selected_types)]
+                    else:
+                        filtered_df = df
+                else:
+                    filtered_df = df
+                
                 # Show a simple table of works
                 try:
-                    st.dataframe(df,
+                    st.dataframe(filtered_df,
                                  column_config={
                                      "put-code": None,
                                      "modified-date": None,
@@ -94,16 +112,19 @@ if 'orcid_list' in locals() and orcid_list is not None:
                                      "orcid": None,
                                      "name": None
                                      },
-                                     column_order=["title", "type", "journal-title", "publication-year", "doi", "url"], 
+                                     column_order=["title", "journal-title", "publication-year", "type", "doi", "url"], 
                                  height="content", 
                                  hide_index=True)
                 except Exception:
                     st.write("Aucun travail disponible à afficher.")
 
         with tab_summary:
-            st.header(f"Résumé du profil ORCID de {person_name} ({orcid_input})")
 
-            st.link_button(f"Voir profil :material/open_in_new:", raw.get('orcid-identifier', {}).get('uri'))
+            col1, col2 = st.columns([4,1],vertical_alignment="bottom")
+            with col1:
+                st.header(f"Résumé du profil ORCID de {person_name}")
+            with col2:
+                st.link_button(f"Voir profil {orcid_input} :material/open_in_new:", raw.get('orcid-identifier', {}).get('uri'))
         
             st.write(f"Créé le: {format_timestamp(raw.get('history', {}).get('submission-date', {}).get('value'))}")
             
