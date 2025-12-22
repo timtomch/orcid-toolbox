@@ -1,6 +1,10 @@
 import streamlit as st
 import re
 from src.orcid_data import fetch_orcid_data, format_timestamp
+from references_tractor import ReferencesTractor
+from references_tractor.utils.span import extract_references_and_mentions
+from references_tractor.utils.prescreening import prescreen_references
+from tqdm.notebook import tqdm  # type: ignore
 
 st.set_page_config(page_title="Boîte à outils ORCID", page_icon=":toolbox:", layout="wide", initial_sidebar_state="expanded")
 
@@ -9,6 +13,9 @@ with st.sidebar:
     st.markdown('''
     Cette application réunit plusieurs outils pour interagir avec les données ORCID.
     ''')
+
+    if "orcid_list" in st.session_state:
+        st.button("Changer d'ORCID", type="secondary", on_click=lambda: st.session_state.pop("orcid_list"))
 
     st.header("Statut")
 
@@ -24,45 +31,68 @@ if st.query_params and "tab" in st.query_params and st.query_params["tab"] in ["
 else:
     default_tab = None
 
-tab_works, tab_activities, tab_summary, tab_suggest = st.tabs(["Travaux", "Autres activités", "Résumé", "Suggestions"], default=default_tab)
+tab_works, tab_compare, tab_summary, tab_suggest = st.tabs(["Travaux", "Comparateur", "Résumé", "Suggestions"], default=default_tab)
 
 # Debug: Check query params
 # st.write("Query params:", dict(st.query_params))
 
-orcid_input = None
-if st.query_params and "orcid" in st.query_params and st.query_params["orcid"]:
-    orcid_input = st.query_params["orcid"]
-elif "orcid_input_field" in st.session_state and st.session_state.orcid_input_field:
-    # Use the value from session state without showing the input again
-    orcid_input = st.session_state.orcid_input_field
-else:
-    # Only show input if we don't have an ORCID yet
-    orcid_input = st.text_input("Renseignez votre numéro ORCID (séparez plusieurs ORCIDs par des virgules):", key="orcid_input_field")
-
-if orcid_input:
-    # Parse and normalize orcid_input to always be a list
-    if isinstance(orcid_input, str):
-        orcid_list = [orcid.strip() for orcid in orcid_input.split(',') if orcid.strip()]
-    elif isinstance(orcid_input, list):
-        orcid_list = [orcid.strip() for orcid in orcid_input if orcid.strip()]
+# Check for ORCID from query params first and validate immediately
+if "orcid_list" not in st.session_state:
+    if st.query_params and "orcid" in st.query_params and st.query_params["orcid"]:
+        # Parse from URL parameter
+        orcid_from_url = st.query_params["orcid"]
+        if isinstance(orcid_from_url, str):
+            orcid_list = [orcid.strip() for orcid in orcid_from_url.split(',') if orcid.strip()]
+        else:
+            orcid_list = [str(orcid_from_url).strip()]
+        
+        # ORCID validation
+        orcid_pattern = r'^[0-9a-zA-Z]{4}-[0-9a-zA-Z]{4}-[0-9a-zA-Z]{4}-[0-9a-zA-Z]{4}$'
+        invalid_orcids = [orcid for orcid in orcid_list if not re.match(orcid_pattern, orcid)]
+        
+        if invalid_orcids:
+            st.error(f"Format d'ORCID incorrect pour: {', '.join(invalid_orcids)}. Le format doit être XXXX-XXXX-XXXX-XXXX.")
+            st.stop()
+        
+        # Store validated ORCID list from URL
+        st.session_state.orcid_list = orcid_list
     else:
-        orcid_list = [str(orcid_input).strip()]
-    
-    if not orcid_list:
-        st.error("Veuillez fournir au moins un ORCID valide.")
+        # Show input field if no URL parameter
+        orcid_input = st.text_input("Renseignez votre numéro ORCID (séparez plusieurs ORCIDs par des virgules):", key="orcid_input_field")
+        
+        # Validate on button click OR when input exists (Enter key pressed)
+        if (st.button("Valider", type="primary") or orcid_input) and orcid_input:
+            # Parse and normalize orcid_input to always be a list
+            if isinstance(orcid_input, str):
+                orcid_list = [orcid.strip() for orcid in orcid_input.split(',') if orcid.strip()]
+            elif isinstance(orcid_input, list):
+                orcid_list = [orcid.strip() for orcid in orcid_input if orcid.strip()]
+            else:
+                orcid_list = [str(orcid_input).strip()]
+            
+            if not orcid_list:
+                st.error("Veuillez fournir au moins un ORCID valide.")
+                st.stop()
+            
+            # ORCID validation before storing
+            orcid_pattern = r'^[0-9a-zA-Z]{4}-[0-9a-zA-Z]{4}-[0-9a-zA-Z]{4}-[0-9a-zA-Z]{4}$'
+            invalid_orcids = [orcid for orcid in orcid_list if not re.match(orcid_pattern, orcid)]
+            
+            if invalid_orcids:
+                st.error(f"Format d'ORCID incorrect pour: {', '.join(invalid_orcids)}. Le format doit être XXXX-XXXX-XXXX-XXXX.")
+                st.stop()
+            
+            # Store in session state once validated
+            st.session_state.orcid_list = orcid_list
+            st.rerun()
+        
         st.stop()
 
-if 'orcid_list' in locals() and orcid_list is not None:
-    # ORCID validation
-    orcid_pattern = r'^[0-9a-zA-Z]{4}-[0-9a-zA-Z]{4}-[0-9a-zA-Z]{4}-[0-9a-zA-Z]{4}$'
-    invalid_orcids = [orcid for orcid in orcid_list if not re.match(orcid_pattern, orcid)]
-    
-    if invalid_orcids:
-        st.error(f"Format d'ORCID incorrect pour: {', '.join(invalid_orcids)}. Le format doit être XXXX-XXXX-XXXX-XXXX.")
-        st.stop()
-    
-    # Process each ORCID
-    for idx, orcid_input in enumerate(orcid_list):     
+# Retrieve from session state
+orcid_list = st.session_state.orcid_list
+
+# Process each ORCID
+for idx, orcid_input in enumerate(orcid_list):     
         with st.spinner(f'Chargement de {orcid_input}...'):
             df, raw = fetch_orcid_data(orcid_input)
             person_name = df['name'].iloc[0] if not df.empty and 'name' in df.columns else ''
@@ -148,6 +178,10 @@ if 'orcid_list' in locals() and orcid_list is not None:
                 "last_modified": format_timestamp(raw.get('activities-summary', {}).get('fundings', {}). get('last-modified-date', {}).get('value'),True)
                 } if raw.get('activities-summary', {}).get('fundings', {}).get('last-modified-date') else None
 
+            try:
+                updated_person = raw.get('person', {}).get('last-modified-date', {}).get('value')
+            except Exception:
+                updated_person = None
 
             updated_table = {
                 "Section": [
@@ -165,7 +199,7 @@ if 'orcid_list' in locals() and orcid_list is not None:
                     f"✅ ({summary_works['count']})" if summary_works else "❌"
                 ],
                 "Dernière modification": [
-                    format_timestamp(raw.get('person', {}).get('last-modified-date', {}).get('value')),
+                    format_timestamp(updated_person) if updated_person else "N/A",
                     summary_employments['last_modified'] if summary_employments else "N/A",
                     summary_educations['last_modified'] if summary_educations else "N/A",
                     summary_fundings['last_modified'] if summary_fundings else "N/A",
@@ -175,4 +209,45 @@ if 'orcid_list' in locals() and orcid_list is not None:
             
             st.table(updated_table, border="horizontal")
 
+        with tab_compare:
+
+            if len(orcid_list) > 1:
+                st.warning("Le comparateur ne peut être utilisé qu'avec un seul ORCID à la fois. Veuillez fournir un seul ORCID.")
+                st.stop()
+
+            col_source, col_target = st.columns(2)
+
+            with col_source:
+                st.subheader("Références à comparer")
+
+                refs_file = st.file_uploader("Téléchargez un fichier texte contenant des références bibliographiques à extraire :", type=["txt"])
+                if refs_file:
+                    source_refs = refs_file.read().decode("utf-8")
+
+                    # Initialize References Tractor for reference extraction
+                    ref_tractor = ReferencesTractor()
+
+                    st.markdown("**Références extraites :**")
+                    extracted =  extract_references_and_mentions(source_refs, ref_tractor.span_pipeline)
+
+                    references = extracted["references"]
+                    mentions = extracted["mentions"]
+
+                    screened_refs = prescreen_references(references, ref_tractor.prescreening_pipeline)
+                    invalid_refs = [r for r in references if r not in screened_refs]
+
+                    with st.sidebar:
+                        st.success(f"{len(screened_refs)} références valides extraites, {len(invalid_refs)} références invalides ignorées.")
+
+                    for ref in tqdm(screened_refs, desc="Linking References", unit=" reference"):
+                        ref_text = ref["text"]
+
+                        ref_ner = ref_tractor.process_ner_entities(ref_text)
+                        ref['ner'] = ref_ner
+                        with st.expander(ref_ner["TITLE"][0] if "TITLE" in ref_ner and ref_ner["TITLE"] else ref_text[:50] + "..."):
+                            st.write(ref_ner)
+                    
+
+            with col_target:
+                st.subheader(f"Références dans profil ORCID de {person_name}")
 
