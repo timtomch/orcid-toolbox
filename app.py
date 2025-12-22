@@ -239,7 +239,7 @@ for idx, orcid_input in enumerate(orcid_list):
                     st.markdown("**Contrôle de correspondance :**")
                     
                     # Configure matching thresholds
-                    confidence_interval = st.slider("Seuil de confiance (%)", 50, 100, (80, 95), 1)
+                    confidence_interval = st.slider("Seuil de confiance (%)", 50, 100, (75, 95), 1)
                     
                     # Prepare ORCID works and match references
                     orcid_works = prepare_orcid_works(df)
@@ -332,16 +332,6 @@ for idx, orcid_input in enumerate(orcid_list):
                                     st.caption(f"Année: {ref['ref_year'] or 'N/A'}")
                                 st.caption("Entités détectées :")
                                 st.json(ref_ner, expanded=False)
-
-                        with col_target:
-                            confidence_color = "🟢" if ref['confidence'] >= 90 else "🟡" if ref['confidence'] >= 80 else "🟠"
-                            with st.expander(f"{confidence_color} {ref['confidence']:.0f}% - {ref['orcid_title']}"):
-                                st.write("Données extraites d'ORCID :")
-                                st.caption(f"Score titre: {ref['title_score']}")
-                                if ref['orcid_journal']:
-                                    st.caption(f"Journal: {ref['orcid_journal'] or 'N/A'} (score {ref['journal_score']})")
-                                if ref['orcid_year']:
-                                    st.caption(f"Année: {ref['orcid_year'] or 'N/A'} (score {ref['year_score']})")
             
 
 
