@@ -1,10 +1,12 @@
 import streamlit as st
 import re
+import pandas as pd
 from src.orcid_data import fetch_orcid_data, format_timestamp
 from references_tractor import ReferencesTractor
 from references_tractor.utils.span import extract_references_and_mentions
 from references_tractor.utils.prescreening import prescreen_references
 from tqdm.notebook import tqdm  # type: ignore
+from thefuzz import fuzz
 
 st.set_page_config(page_title="Boîte à outils ORCID", page_icon=":toolbox:", layout="wide", initial_sidebar_state="expanded")
 
@@ -239,15 +241,166 @@ for idx, orcid_input in enumerate(orcid_list):
                     with st.sidebar:
                         st.success(f"{len(screened_refs)} références valides extraites, {len(invalid_refs)} références invalides ignorées.")
 
-                    for ref in tqdm(screened_refs, desc="Linking References", unit=" reference"):
+                    # Add reference numbers
+                    for i, ref in enumerate(tqdm(screened_refs, desc="Linking References", unit=" reference"), start=1):
+                        ref['ref_number'] = i
                         ref_text = ref["text"]
 
                         ref_ner = ref_tractor.process_ner_entities(ref_text)
                         ref['ner'] = ref_ner
-                        with st.expander(ref_ner["TITLE"][0] if "TITLE" in ref_ner and ref_ner["TITLE"] else ref_text[:50] + "..."):
+                        ref_title_display = ref_ner["TITLE"][0] if "TITLE" in ref_ner and ref_ner["TITLE"] else ref_text[:50] + "..."
+                        with st.expander(f"[{i}] {ref_title_display}"):
                             st.write(ref_ner)
                     
 
             with col_target:
-                st.subheader(f"Références dans profil ORCID de {person_name}")
+                st.subheader(f"Références dans profil ORCID")
+                
+                if refs_file:
+                    # Compare references with fuzzy matching
+                    st.markdown("**Analyse de comparaison :**")
+                    
+                    # Configure matching thresholds
+                    min_confidence = st.slider("Seuil de confiance minimum (%)", 70, 100, 90, 1)
+                    
+                    # Build ORCID works dataset for comparison
+                    orcid_works = []
+                    for idx, row in df.iterrows():
+                        orcid_works.append({
+                            'title': str(row['title']).lower().strip() if pd.notna(row['title']) else '',
+                            'year': str(row['publication-year']).strip() if pd.notna(row['publication-year']) else '',
+                            'journal': str(row['journal-title']).lower().strip() if pd.notna(row['journal-title']) else '',
+                            'original_title': str(row['title']) if pd.notna(row['title']) else 'Sans titre'
+                        })
+                    
+                    # Find matches using fuzzy matching with confidence scoring
+                    matched_refs = []
+                    unmatched_refs = []
+                    
+                    for ref in screened_refs:
+                        ref_number = ref.get('ref_number', 0)
+                        # Extract reference metadata
+                        ref_title = ''
+                        ref_orig_title = ''
+                        ref_year = ''
+                        ref_journal = ''
+                        
+                        if 'ner' in ref:
+                            if 'TITLE' in ref['ner'] and ref['ner']['TITLE']:
+                                ref_title = ref['ner']['TITLE'][0].lower().strip()
+                                ref_orig_title = ref['ner']['TITLE'][0].strip()
+                            if 'PUBLICATION_YEAR' in ref['ner'] and ref['ner']['PUBLICATION_YEAR']:
+                                ref_year = ''.join(filter(str.isdigit, ref['ner']['PUBLICATION_YEAR'][0]))[:4]
+                            if 'JOURNAL' in ref['ner'] and ref['ner']['JOURNAL']:
+                                ref_journal = ref['ner']['JOURNAL'][0].lower().strip()
+                        
+                        if not ref_title:
+                            continue
+                        
+                        # Find best match among ORCID works
+                        best_match = None
+                        best_confidence = 0
+                        best_title_score = 0
+                        best_year_score = 0
+                        best_journal_score = 0
+                        
+                        for work in orcid_works:
+                            if not work['title']:
+                                continue
+                            
+                            # Calculate title similarity (70% weight)
+                            title_score = fuzz.token_sort_ratio(ref_title, work['title'])
+                            
+                            # Calculate year match (15% weight)
+                            year_score = 0
+                            if ref_year and work['year']:
+                                # Clean year strings and compare
+                                try:
+                                    ref_year_clean = str(int(float(ref_year)))
+                                    work_year_clean = str(int(float(work['year'])))
+                                    year_score = 100 if ref_year_clean == work_year_clean else 0
+                                except (ValueError, TypeError) as e:
+                                    year_score = 0
+                            
+                            # Calculate journal similarity (15% weight)
+                            journal_score = 0
+                            if ref_journal and work['journal']:
+                                journal_score = fuzz.partial_ratio(ref_journal, work['journal'])
+                            
+                            # Weighted confidence score
+                            confidence = (title_score * 0.7 + year_score * 0.15 + journal_score * 0.15)
+                            
+                            if confidence > best_confidence:
+                                best_confidence = confidence
+                                best_match = work
+                                best_title_score = title_score
+                                best_year_score = year_score
+                                best_journal_score = journal_score
+                        
+                        # Store match if confidence exceeds threshold
+                        if best_match and best_confidence >= min_confidence:
+                            matched_refs.append({
+                                'ref': ref,
+                                'ref_number': ref_number,
+                                'ref_title': ref_title,
+                                'ref_orig_title': ref_orig_title,
+                                'ref_year': ref_year,
+                                'ref_journal': ref_journal,
+                                'orcid_title': best_match['original_title'],
+                                'orcid_year': best_match['year'],
+                                'orcid_journal': best_match['journal'],
+                                'confidence': best_confidence,
+                                'title_score': best_title_score,
+                                'year_score': best_year_score,
+                                'journal_score': best_journal_score
+                            })
+                        else:
+                            unmatched_refs.append({
+                                'ref': ref,
+                                'ref_number': ref_number,
+                                'ref_title': ref_title,
+                                'ref_orig_title': ref_orig_title,
+                                'ref_year': ref_year,
+                                'ref_journal': ref_journal,
+                                'best_confidence': best_confidence if best_match else 0,
+                                'title_score': title_score,
+                                'year_score': year_score,
+                                'journal_score': journal_score
+                            })
+                    
+                    # Display statistics
+                    col_a, col_b, col_c = st.columns(3)
+                    with col_a:
+                        st.metric("Références extraites", len(screened_refs))
+                    with col_b:
+                        st.metric("Trouvées dans ORCID", len(matched_refs), f"{len(matched_refs)/len(screened_refs)*100:.0f}%" if screened_refs else "0%")
+                    with col_c:
+                        st.metric("Manquantes dans ORCID", len(unmatched_refs))
+                    
+                    # Display matched references
+                    if matched_refs:
+                        # Sort by confidence descending
+                        matched_refs_sorted = sorted(matched_refs, key=lambda x: x['confidence'], reverse=True)
+                        with st.expander(f"✅ {len(matched_refs)} références trouvées dans ORCID", expanded=True):
+                            for item in matched_refs_sorted:
+                                confidence_color = "🟢" if item['confidence'] >= 90 else "🟡" if item['confidence'] >= 80 else "🟠"
+                                st.markdown(f"{confidence_color} **[{item['ref_number']}]** {item['confidence']:.0f}% - {item['ref_orig_title']}")
+                                st.caption(f"Titre dans ORCID: {item['orcid_title']} (score {item['title_score']})")
+                                if item['ref_journal'] or item['orcid_journal']:
+                                    st.caption(f"Journal: {item['ref_journal'] or 'N/A'} | ORCID: {item['orcid_journal'] or 'N/A'} (score {item['journal_score']})")
+                                if item['ref_year'] or item['orcid_year']:
+                                    st.caption(f"Année: {item['ref_year'] or 'N/A'} | ORCID: {item['orcid_year'] or 'N/A'} (score {item['year_score']})")
+                                st.divider()
+                    
+                    # Display unmatched references
+                    if unmatched_refs:
+                        with st.expander(f"⚠️ {len(unmatched_refs)} références manquantes dans ORCID", expanded=True):
+                            for item in unmatched_refs:
+                                st.markdown(f"- **[{item['ref_number']}]** {item['ref_title']} ({item['ref_year'] or 'N/A'})")
+                                if item['best_confidence'] > 0:
+                                    st.caption(f"   Meilleure correspondance: {item['best_confidence']:.0f}% (sous le seuil)")
+                                if item['ref_journal']:
+                                    st.caption(f"   Journal: {item['ref_journal']}")
+
+
 
