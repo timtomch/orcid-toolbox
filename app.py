@@ -239,7 +239,7 @@ for idx, orcid_input in enumerate(orcid_list):
                     st.markdown("**Contrôle de correspondance :**")
                     
                     # Configure matching thresholds
-                    confidence_interval = st.slider("Seuil de confiance (%)", 50, 100, (75, 95), 1)
+                    confidence_interval = st.slider("Seuil de confiance (%)", 50, 100, (70, 95), 1)
                     
                     # Prepare ORCID works and match references
                     orcid_works = prepare_orcid_works(df)
@@ -253,10 +253,11 @@ for idx, orcid_input in enumerate(orcid_list):
                         st.metric("Trouvées dans ORCID", len(matched_refs))
                     with col_c:
                         st.metric("Manquantes dans ORCID", len(unmatched_refs))
+                        
 
             if matched_refs:
                 st.subheader(f"✅ {len(matched_refs)} références trouvées dans ORCID")
-
+                sorting_option = st.segmented_control("Trier par :", ["Score", "Alpha", "Ordre"], key="sorting_option")
                 for ref in matched_refs:
                     col_source, col_target = st.columns(2)
                     with col_source:
@@ -264,6 +265,7 @@ for idx, orcid_input in enumerate(orcid_list):
                         ref_ner = ref['ref_ner']
                         ref_title_display = ref_ner["TITLE"][0] if "TITLE" in ref_ner and ref_ner["TITLE"] else ref["text"][:50] + "..."
                         with st.expander(f"[{ref_number}] {ref_title_display}"):
+                            st.caption("Texte original:")
                             st.write(ref.get('ref', {}).get('text', ''))
                             col_inner, col_outer = st.columns(2)
                             with col_inner:
@@ -280,7 +282,6 @@ for idx, orcid_input in enumerate(orcid_list):
                     with col_target:
                         confidence_color = "🟢" if ref['confidence'] >= 90 else "🟡" if ref['confidence'] >= 80 else "🟠"
                         with st.expander(f"{confidence_color} {ref['confidence']:.0f}% - {ref['orcid_title']}"):
-                            st.write("Données extraites d'ORCID :")
                             st.caption(f"Score titre: {ref['title_score']}")
                             if ref.get('orcid_journal'):
                                 st.caption(f"Journal: {ref['orcid_journal'] or 'N/A'} (score {ref['journal_score']})")
@@ -303,6 +304,7 @@ for idx, orcid_input in enumerate(orcid_list):
                             ref_ner = ref['ref_ner']
                             ref_title_display = ref_ner["TITLE"][0] if "TITLE" in ref_ner and ref_ner["TITLE"] else ref["text"][:50] + "..."
                             with st.expander(f"[{ref_number}] {ref_title_display}"):
+                                st.caption("Texte original:")
                                 st.write(ref.get('ref', {}).get('text', ''))
                                 col_inner, col_outer = st.columns(2)
                                 with col_inner:
@@ -319,7 +321,6 @@ for idx, orcid_input in enumerate(orcid_list):
                         with col_target:
                             confidence_color = "🟢" if ref['confidence'] >= 90 else "🟡" if ref['confidence'] >= 80 else "🟠"
                             with st.expander(f"{confidence_color} {ref['confidence']:.0f}% - {ref['orcid_title']}"):
-                                st.write("Données extraites d'ORCID :")
                                 st.caption(f"Score titre: {ref['title_score']}")
                                 if ref.get('orcid_journal'):
                                     st.caption(f"Journal: {ref['orcid_journal'] or 'N/A'} (score {ref['journal_score']})")

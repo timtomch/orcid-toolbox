@@ -99,9 +99,7 @@ def calculate_match_score(ref_metadata: Dict[str, str], work: Dict[str, str]) ->
     # Calculate year match (10% weight)
     if ref_metadata['year'] and work['year']:
         try:
-            ref_year_clean = str(int(float(ref_metadata['year'])))
-            work_year_clean = str(int(float(work['year'])))
-            scores['year'] = 100 if ref_year_clean == work_year_clean else 0
+            scores['year'] = 100 if ref_metadata['year'].strip() == work['year'].strip() else 0
         except (ValueError, TypeError):
             scores['year'] = 0
     
