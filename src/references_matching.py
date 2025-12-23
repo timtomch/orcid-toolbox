@@ -41,6 +41,7 @@ def prepare_orcid_works(df: pd.DataFrame) -> List[Dict[str, str]]:
             'title': str(row['title']).lower().strip() if pd.notna(row['title']) else '',
             'year': str(row['publication-year']).strip() if pd.notna(row['publication-year']) else '',
             'journal': str(row['journal-title']).lower().strip() if pd.notna(row['journal-title']) else '',
+            'doi': str(row['doi']).strip() if pd.notna(row['doi']) else '',
             'original_title': str(row['title']) if pd.notna(row['title']) else 'Sans titre'
         })
     return orcid_works
@@ -53,6 +54,7 @@ def extract_reference_metadata(ref: Dict) -> Dict[str, str]:
         'year': '',
         'journal': '',
         'number': ref.get('ref_number', 0),
+        'doi': '',
         'ner': ''
     }
     
@@ -75,6 +77,10 @@ def extract_reference_metadata(ref: Dict) -> Dict[str, str]:
     if 'JOURNAL' in ner and ner['JOURNAL']:
         metadata['journal'] = ner['JOURNAL'][0].lower().strip()
     
+    # Extract DOI
+    if 'DOI' in ner and ner['DOI']:
+        metadata['doi'] = ner['DOI'][0].strip()
+    
     return metadata
 
 
@@ -82,14 +88,15 @@ def calculate_match_score(ref_metadata: Dict[str, str], work: Dict[str, str]) ->
     scores = {
         'title': 0,
         'year': 0,
-        'journal': 0
+        'journal': 0,
+        'doi': 0
     }
     
-    # Calculate title similarity (70% weight)
+    # Calculate title similarity (50% weight)
     if ref_metadata['title'] and work['title']:
         scores['title'] = fuzz.token_sort_ratio(ref_metadata['title'], work['title'])
     
-    # Calculate year match (15% weight)
+    # Calculate year match (10% weight)
     if ref_metadata['year'] and work['year']:
         try:
             ref_year_clean = str(int(float(ref_metadata['year'])))
@@ -98,12 +105,20 @@ def calculate_match_score(ref_metadata: Dict[str, str], work: Dict[str, str]) ->
         except (ValueError, TypeError):
             scores['year'] = 0
     
-    # Calculate journal similarity (15% weight)
+    # Calculate journal similarity (10% weight)
     if ref_metadata['journal'] and work['journal']:
         scores['journal'] = fuzz.partial_ratio(ref_metadata['journal'], work['journal'])
+
+    # Calculate DOI match (high weight when present)
+    if ref_metadata['doi'] and work['doi']:
+        scores['doi'] = 100 if ref_metadata['doi'].lower() == work['doi'].lower() else 0
     
-    # Weighted confidence score
-    confidence = (scores['title'] * 0.7 + scores['year'] * 0.15 + scores['journal'] * 0.15)
+    # Dynamic weighted confidence score
+    # When DOI is present, it gets 40% weight; otherwise distribute to other fields
+    if ref_metadata['doi'] and work['doi']:
+        confidence = (scores['title'] * 0.4 + scores['year'] * 0.1 + scores['journal'] * 0.1 + scores['doi'] * 0.4)
+    else:
+        confidence = (scores['title'] * 0.6 + scores['year'] * 0.2 + scores['journal'] * 0.2)
     
     return confidence, scores
 
@@ -125,7 +140,7 @@ def match_references_to_orcid(
         # Find best match among ORCID works
         best_match = None
         best_confidence = 0
-        best_scores = {'title': 0, 'year': 0, 'journal': 0}
+        best_scores = {'title': 0, 'year': 0, 'journal': 0, 'doi': 0}
         
         for work in orcid_works:
             if not work['title']:
@@ -148,13 +163,16 @@ def match_references_to_orcid(
                 'ref_orig_title': ref_metadata['orig_title'],
                 'ref_year': ref_metadata['year'],
                 'ref_journal': ref_metadata['journal'],
+                'ref_doi': ref_metadata['doi'],
                 'orcid_title': best_match['original_title'],
                 'orcid_year': best_match['year'],
                 'orcid_journal': best_match['journal'],
+                'orcid_doi': best_match['doi'],
                 'confidence': best_confidence,
                 'title_score': best_scores['title'],
                 'year_score': best_scores['year'],
-                'journal_score': best_scores['journal']
+                'journal_score': best_scores['journal'],
+                'doi_score': best_scores['doi']
             })
         else:
             unmatched_refs.append({
@@ -165,13 +183,16 @@ def match_references_to_orcid(
                 'ref_orig_title': ref_metadata['orig_title'],
                 'ref_year': ref_metadata['year'],
                 'ref_journal': ref_metadata['journal'],
+                'ref_doi': ref_metadata['doi'],
                 'orcid_title': best_match['original_title'] if best_match else '',
                 'orcid_year': best_match['year'] if best_match else '',
                 'orcid_journal': best_match['journal'] if best_match else '',
+                'orcid_doi': best_match['doi'] if best_match else '',
                 'confidence': best_confidence if best_match else 0,
                 'title_score': best_scores['title'],
                 'year_score': best_scores['year'],
-                'journal_score': best_scores['journal']
+                'journal_score': best_scores['journal'],
+                'doi_score': best_scores['doi']
             })
     
     return matched_refs, unmatched_refs

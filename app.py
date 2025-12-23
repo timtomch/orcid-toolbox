@@ -264,24 +264,30 @@ for idx, orcid_input in enumerate(orcid_list):
                         ref_ner = ref['ref_ner']
                         ref_title_display = ref_ner["TITLE"][0] if "TITLE" in ref_ner and ref_ner["TITLE"] else ref["text"][:50] + "..."
                         with st.expander(f"[{ref_number}] {ref_title_display}"):
-                            st.write("Données extraites du fichier de références :")
-                            if ref['ref_journal']:
-                                st.caption(f"Journal: {ref['ref_journal'] or 'N/A'}")
-                            if ref['ref_year']:
-                                st.caption(f"Année: {ref['ref_year'] or 'N/A'}")
-                            st.caption("Entités détectées :")
-                            st.json(ref_ner, expanded=False)
+                            st.write(ref.get('ref', {}).get('text', ''))
+                            col_inner, col_outer = st.columns(2)
+                            with col_inner:
+                                if ref.get('ref_journal'):
+                                    st.caption(f"Journal: {ref['ref_journal'] or 'N/A'}")
+                                if ref.get('ref_year'):
+                                    st.caption(f"Année: {ref['ref_year'] or 'N/A'}")
+                                if ref.get('ref_doi'):
+                                    st.caption(f"DOI: {ref['ref_doi'] or 'N/A'}")
+                            with col_outer:
+                                st.caption("Entités détectées :")
+                                st.json(ref_ner, expanded=False)
 
                     with col_target:
                         confidence_color = "🟢" if ref['confidence'] >= 90 else "🟡" if ref['confidence'] >= 80 else "🟠"
                         with st.expander(f"{confidence_color} {ref['confidence']:.0f}% - {ref['orcid_title']}"):
                             st.write("Données extraites d'ORCID :")
                             st.caption(f"Score titre: {ref['title_score']}")
-                            if ref['orcid_journal']:
+                            if ref.get('orcid_journal'):
                                 st.caption(f"Journal: {ref['orcid_journal'] or 'N/A'} (score {ref['journal_score']})")
-                            if ref['orcid_year']:
+                            if ref.get('orcid_year'):
                                 st.caption(f"Année: {ref['orcid_year'] or 'N/A'} (score {ref['year_score']})")
-
+                            if ref.get('orcid_doi'):
+                                st.caption(f"DOI: {ref['orcid_doi'] or 'N/A'} (score {ref['doi_score']})")
             
             if unmatched_refs:
                 st.subheader(f"⚠️ Références à valider")
@@ -297,23 +303,30 @@ for idx, orcid_input in enumerate(orcid_list):
                             ref_ner = ref['ref_ner']
                             ref_title_display = ref_ner["TITLE"][0] if "TITLE" in ref_ner and ref_ner["TITLE"] else ref["text"][:50] + "..."
                             with st.expander(f"[{ref_number}] {ref_title_display}"):
-                                st.write("Données extraites du fichier de références :")
-                                if ref['ref_journal']:
-                                    st.caption(f"Journal: {ref['ref_journal'] or 'N/A'}")
-                                if ref['ref_year']:
-                                    st.caption(f"Année: {ref['ref_year'] or 'N/A'}")
-                                st.caption("Entités détectées :")
-                                st.json(ref_ner, expanded=False)
+                                st.write(ref.get('ref', {}).get('text', ''))
+                                col_inner, col_outer = st.columns(2)
+                                with col_inner:
+                                    if ref.get('ref_journal'):
+                                        st.caption(f"Journal: {ref['ref_journal'] or 'N/A'}")
+                                    if ref.get('ref_year'):
+                                        st.caption(f"Année: {ref['ref_year'] or 'N/A'}")
+                                    if ref.get('ref_doi'):
+                                        st.caption(f"DOI: {ref['ref_doi'] or 'N/A'}")
+                                with col_outer:
+                                    st.caption("Entités détectées :")
+                                    st.json(ref_ner, expanded=False)
 
                         with col_target:
                             confidence_color = "🟢" if ref['confidence'] >= 90 else "🟡" if ref['confidence'] >= 80 else "🟠"
                             with st.expander(f"{confidence_color} {ref['confidence']:.0f}% - {ref['orcid_title']}"):
                                 st.write("Données extraites d'ORCID :")
                                 st.caption(f"Score titre: {ref['title_score']}")
-                                if ref['orcid_journal']:
+                                if ref.get('orcid_journal'):
                                     st.caption(f"Journal: {ref['orcid_journal'] or 'N/A'} (score {ref['journal_score']})")
-                                if ref['orcid_year']:
+                                if ref.get('orcid_year'):
                                     st.caption(f"Année: {ref['orcid_year'] or 'N/A'} (score {ref['year_score']})")
+                                if ref.get('orcid_doi'):    
+                                    st.caption(f"DOI: {ref['orcid_doi'] or 'N/A'} (score {ref['doi_score']})")
                 
                 st.subheader(f"❌ Références non trouvées")
 
@@ -325,13 +338,18 @@ for idx, orcid_input in enumerate(orcid_list):
                             ref_ner = ref['ref_ner']
                             ref_title_display = ref_ner["TITLE"][0] if "TITLE" in ref_ner and ref_ner["TITLE"] else ref["text"][:50] + "..."
                             with st.expander(f"[{ref_number}] {ref_title_display}"):
-                                st.write("Données extraites du fichier de références :")
-                                if ref['ref_journal']:
-                                    st.caption(f"Journal: {ref['ref_journal'] or 'N/A'}")
-                                if ref['ref_year']:
-                                    st.caption(f"Année: {ref['ref_year'] or 'N/A'}")
-                                st.caption("Entités détectées :")
-                                st.json(ref_ner, expanded=False)
+                                st.write(ref.get('ref', {}).get('text', ''))
+                                col_inner, col_outer = st.columns(2)
+                                with col_inner:
+                                    if ref.get('ref_journal'):
+                                        st.caption(f"Journal: {ref['ref_journal'] or 'N/A'}")
+                                    if ref.get('ref_year'):
+                                        st.caption(f"Année: {ref['ref_year'] or 'N/A'}")
+                                    if ref.get('ref_doi'):
+                                        st.caption(f"DOI: {ref['ref_doi'] or 'N/A'}")
+                                with col_outer:
+                                    st.caption("Entités détectées :")
+                                    st.json(ref_ner, expanded=False)
             
 
 
