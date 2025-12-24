@@ -3,6 +3,7 @@ import re
 import pandas as pd
 from src.orcid_data import fetch_orcid_data, format_timestamp
 from src.references_matching import extract_and_process_references, prepare_orcid_works, match_references_to_orcid
+import importlib.util
 
 st.set_page_config(page_title="Boîte à outils ORCID", page_icon=":toolbox:", layout="wide", initial_sidebar_state="expanded")
 
@@ -30,9 +31,6 @@ else:
     default_tab = None
 
 tab_works, tab_compare, tab_summary, tab_suggest = st.tabs(["Travaux", "Comparateur", "Résumé", "Suggestions"], default=default_tab)
-
-# Debug: Check query params
-# st.write("Query params:", dict(st.query_params))
 
 # Check for ORCID from query params first and validate immediately
 if "orcid_list" not in st.session_state:
@@ -212,7 +210,11 @@ for idx, orcid_input in enumerate(orcid_list):
             if len(orcid_list) > 1:
                 st.warning("Le comparateur ne peut être utilisé qu'avec un seul ORCID à la fois. Veuillez fournir un seul ORCID.")
                 st.stop()
-
+            
+            if importlib.util.find_spec("references_tractor") is None:
+                st.warning("Cette fonctionalité nécessite l'installation du package 'references-tractor', mais ce dernier n'est pas installé dans l'environnement actuel.")
+                st.stop()
+                
             col_file, col_controls = st.columns(2)
 
             with col_file:

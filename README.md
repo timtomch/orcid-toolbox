@@ -25,6 +25,8 @@ pip install -e references-tractor/. --prefer-binary
 
 The `--prefer-binary` flag was necessary on my (older) Intel-based Mac, in order to prevent `pip` from trying to compile the required binaries from scratch, which was causing issues. Your mileage may vary.
 
+It is also possible to run the application without installing `references-tractor`, this will simply disable the reference matching functionality.
+
 ## Running
 
 Once all the dependencies have been installed, start the web app:
