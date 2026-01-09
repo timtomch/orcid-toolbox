@@ -170,7 +170,7 @@ def fetch_orcid_data(orcid: str, timeout: int = 10) -> tuple[pd.DataFrame, Optio
 				"title",
 				"type",
 				"journal-title",
-				"publication-date",
+				"publication-year",
 				"external-ids",
 				"visibility",
 				"url",
