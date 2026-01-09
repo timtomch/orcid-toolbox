@@ -4,6 +4,8 @@ import pandas as pd
 from src.orcid_data import fetch_orcid_data, format_timestamp
 from src.references_matching import extract_and_process_references, prepare_orcid_works, match_references_to_orcid
 import importlib.util
+# TODO: Use gettext for localization
+# The user locale is available at st.context.locale
 
 st.set_page_config(page_title="Boîte à outils ORCID", page_icon=":toolbox:", layout="wide", initial_sidebar_state="expanded")
 
@@ -205,6 +207,10 @@ for idx, orcid_input in enumerate(orcid_list):
             
             st.table(updated_table, border="horizontal")
 
+            st.subheader("Distribution des travaux par année de publication")
+
+            st.bar_chart(df['publication-year'].value_counts().sort_index())
+
         with tab_compare:
 
             if len(orcid_list) > 1:
@@ -214,7 +220,7 @@ for idx, orcid_input in enumerate(orcid_list):
             if importlib.util.find_spec("references_tractor") is None:
                 st.warning("Cette fonctionalité nécessite l'installation du package 'references-tractor', mais ce dernier n'est pas installé dans l'environnement actuel.")
                 st.stop()
-                
+
             col_file, col_controls = st.columns(2)
 
             with col_file:
