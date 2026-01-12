@@ -2,6 +2,8 @@
 
 A web app built using the [Streamlit](https://streamlit.io/) framework offering several tools to interact with [ORCID](https://orcid.org) profiles.
 
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://orcid-toolbox.streamlit.app/)
+
 Work in progress. Interface currently in French only.
 
 ## Installation
