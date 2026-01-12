@@ -2,11 +2,216 @@
 # Uses fuzzy matching to find corresponding publications
 
 import pandas as pd
+import re
 from thefuzz import fuzz
 from typing import List, Dict, Tuple, Any
+import importlib.util
+
+# Extract individual references from large text block
+def extract_references_from_text(text: str) -> List[Dict]:
+    references = []
+    
+    # Common patterns: [1], (1), 1., etc. at start of line
+    lines = text.split('\n')
+    current_ref = []
+    ref_number = 0
+    
+    for line in lines:
+        stripped_line = line.strip()
+        
+        # Blank line separates references
+        if not stripped_line:
+            if current_ref:
+                # Save current reference
+                ref_text = ' '.join(current_ref)
+                ref_number += 1
+                references.append({
+                    'text': ref_text,
+                    'ref_number': ref_number,
+                    'start': 0,
+                    'end': len(ref_text)
+                })
+                current_ref = []
+            continue
+            
+        # Check if line starts with a reference number
+        match = re.match(r'^[\[\(]?(\d+)[\]\)\.]\s*(.+)', stripped_line)
+        if match:
+            # Save previous reference if exists
+            if current_ref:
+                ref_text = ' '.join(current_ref)
+                references.append({
+                    'text': ref_text,
+                    'ref_number': ref_number,
+                    'start': 0,
+                    'end': len(ref_text)
+                })
+            # Start new reference
+            ref_number = int(match.group(1))
+            current_ref = [match.group(2)]
+        elif current_ref:
+            # Continue current reference
+            current_ref.append(stripped_line)
+        else:
+            # Start a new reference without numbering
+            ref_number += 1
+            current_ref = [stripped_line]
+    
+    # Add last reference
+    if current_ref:
+        ref_text = ' '.join(current_ref)
+        references.append({
+            'text': ref_text,
+            'ref_number': ref_number,
+            'start': 0,
+            'end': len(ref_text)
+        })
+    
+    return references
+
+# Run individual references through NER model and process entities
+# Inspired by https://github.com/sirisacademic/references-tractor
+def extract_ner_entities(text: str) -> Dict[str, List[str]]:
+    # Lazy imports to avoid loading models before they are needed
+    from transformers import pipeline
+
+    # Load the citation parser model from SIRIS lab
+    citation_parser = pipeline("ner", model="SIRIS-Lab/citation-parser-ENTITY", aggregation_strategy="simple")
+
+    try:
+        # Run NER pipeline
+        raw_results = citation_parser(text)
+
+        # Init result structure
+        entities = {
+            'TITLE': [],
+            'AUTHORS': [],
+            'VOLUME': [],
+            'ISSUE': [],
+            'PUBLICATION_YEAR': [],
+            'DOI': [],
+            'ISSN': [],
+            'ISBN': [],
+            'PAGE_FIRST': [],
+            'PAGE_LAST': [],
+            'JOURNAL': [],
+            'EDITOR': []
+        }
+
+        # STEP 1 — sort entities by start index
+        raw_results = sorted(raw_results, key=lambda x: x["start"])
+
+        merged = []
+        current = None
+
+        def flush():
+            nonlocal current, merged
+            if current:
+                merged.append(current)
+                current = None
+
+        for ent in raw_results:
+            group = ent["entity_group"]
+            word = ent["word"]
+            start = ent["start"]
+            end = ent["end"]
+
+            if current is None:
+                current = {
+                    "entity_group": group,
+                    "word": word,
+                    "start": start,
+                    "end": end,
+                    "score": ent["score"]
+                }
+                continue
+
+            # Check if mergeable:
+            same_group = (group == current["entity_group"])
+            touching = (start <= current["end"] + 1)
+
+            if same_group and touching and not group in ["VOLUME", "ISSUE"]:
+                # merge text
+                current["word"] += word
+                current["end"] = end
+                current["score"] = max(current["score"], ent["score"])
+            else:
+                flush()
+                current = {
+                    "entity_group": group,
+                    "word": word,
+                    "start": start,
+                    "end": end,
+                    "score": ent["score"]
+                }
+
+        flush()
+
+        # STEP 2 — convert into dict and populate entities
+        for ent in merged:
+            label = ent["entity_group"]
+            entity_text = ent["word"].strip()
+            if label in entities:
+                entities[label].append(entity_text)
+        
+        # STEP 3 — clean up special cases
+        # Merge DOI fragments and extract just the DOI identifier
+        if 'DOI' in entities and entities['DOI']:
+            if len(entities['DOI']) > 1:
+                # Join all DOI parts
+                merged_doi = ''.join(entities['DOI'])
+            else:
+                merged_doi = entities['DOI'][0]
+            
+            # Extract just the DOI identifier (e.g., 10.1037/cbs0000411)
+            # Remove URL prefixes and clean up
+            merged_doi = merged_doi.lstrip('.')
+            # Remove common URL prefixes
+            merged_doi = re.sub(r'^.*?://doi\.org/', '', merged_doi)
+            merged_doi = re.sub(r'^.*?://dx\.doi\.org/', '', merged_doi)
+            merged_doi = re.sub(r'^doi\.org/', '', merged_doi)
+            merged_doi = re.sub(r'^dx\.doi\.org/', '', merged_doi)
+            
+            # Keep only if it matches DOI pattern (10.xxxxx/...)
+            if merged_doi and re.match(r'10\.\d+/', merged_doi):
+                entities['DOI'] = [merged_doi]
+            else:
+                entities['DOI'] = []
+        
+        # Split VOLUME and ISSUE if both are detected together
+        if 'VOLUME' in entities and len(entities['VOLUME']) == 2:
+            entities['ISSUE'] = [entities['VOLUME'][1]]
+            entities['VOLUME'] = [entities['VOLUME'][0]]
+        
+        # Remove hyphens from page numbers
+        if 'PAGE_FIRST' in entities and entities['PAGE_FIRST']:
+            entities['PAGE_FIRST'] = [p.strip('-') for p in entities['PAGE_FIRST']]
+        if 'PAGE_LAST' in entities and entities['PAGE_LAST']:
+            entities['PAGE_LAST'] = [p.strip('-') for p in entities['PAGE_LAST']]
+
+        return entities
+    
+    except Exception as e:
+        print(f"Error during NER extraction: {e}")
+        return {}
 
 
-def extract_and_process_references(text: str) -> Tuple[List[Dict], List[Dict]]:
+# Main function to extract and process references
+def extract_transformer(text: str) -> Tuple[List[Dict], List[Dict]]:
+
+    screened_refs = extract_references_from_text(text)
+    invalid_refs = []
+
+    for i, ref in enumerate(screened_refs):
+        ref['ref_number'] = i
+        ref_text = ref["text"]
+        ref_ner = extract_ner_entities(ref_text)
+        ref['ner'] = ref_ner
+    
+    return screened_refs, invalid_refs
+
+
+def extract_references_tractor(text: str) -> Tuple[List[Dict], List[Dict]]:
     # Lazy imports to avoid loading nltk at module import time
     from references_tractor import ReferencesTractor
     from references_tractor.utils.span import extract_references_and_mentions
@@ -32,6 +237,15 @@ def extract_and_process_references(text: str) -> Tuple[List[Dict], List[Dict]]:
         ref['ner'] = ref_ner
     
     return screened_refs, invalid_refs
+
+# If references-tractor package is available locally, use it; otherwise, fall back to transformer-based extraction
+def extract_and_process_references(text: str) -> Tuple[List[Dict], List[Dict]]:
+    if importlib.util.find_spec("references_tractor"):
+        return extract_references_tractor(text)
+    elif importlib.util.find_spec("transformers"):
+        return extract_transformer(text)
+    else:
+        raise ImportError("Erreur, une des bibliothèques nécessaires n'est pas installée. Veuillez installer 'references-tractor' ou 'transformers'.")
 
 
 def prepare_orcid_works(df: pd.DataFrame) -> List[Dict[str, str]]:

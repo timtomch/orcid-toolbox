@@ -217,8 +217,8 @@ for idx, orcid_input in enumerate(orcid_list):
                 st.warning("Le comparateur ne peut être utilisé qu'avec un seul ORCID à la fois. Veuillez fournir un seul ORCID.")
                 st.stop()
             
-            if importlib.util.find_spec("references_tractor") is None:
-                st.warning("Cette fonctionalité nécessite l'installation du package 'references-tractor', mais ce dernier n'est pas installé dans l'environnement actuel.")
+            if importlib.util.find_spec("transformers") is None and importlib.util.find_spec("references_tractor") is None:
+                st.warning("Cette fonctionalité nécessite la présence d'une bibliothèque pour l'extraction des références, telle que 'transformers' ou 'references_tractor'. Veuillez installer au moins l'une de ces bibliothèques.")
                 st.stop()
 
             col_file, col_controls = st.columns(2)
