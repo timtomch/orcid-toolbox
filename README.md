@@ -12,10 +12,20 @@ Install dependencies with
 pip install -r requirements.txt
 ````
 
-This project also depends on the [references-tractor](https://github.com/sirisacademic/references-tractor) library for named entity recognition, used to match references. However, `references-tractor` is currently not included in the pip registry. Also, since we're using internal helper functions from this library, it needs to be installed in editable mode.
+### Optional NER dependencies
 
-Instead, install it manually by downloading or cloning the above linked repository inside the `lib` subfolder before building dependencies 
-**in editable mode**:
+The reference matching functionality requires named entity recognition (NER) capability.
+The model used on this project is [Citation Parser](https://huggingface.co/SIRIS-Lab/citation-parser-ENTITY) 
+by SIRIS Lab, either through HuggingFace and the `transformers` library or through SIRIS's 
+[references-tractor](https://github.com/sirisacademic/references-tractor) library.
+`references-tractor` is more powerful, as it includes a variety of steps developed by SIRIS to more accurately identify
+references, but installing it is less straightforward.
+
+The app is designed to revert to `transformers` if `references-tractor` is not available, or to fail gracefully
+if neither library is available.
+
+If you decide to use `references-tractor`, you will need it to install it manually **in editable mode**
+to allow access to internal functions:
 
 ```
 cd lib
@@ -24,8 +34,6 @@ pip install -e references-tractor/. --prefer-binary
 ```
 
 The `--prefer-binary` flag was necessary on my (older) Intel-based Mac, in order to prevent `pip` from trying to compile the required binaries from scratch, which was causing issues. Your mileage may vary.
-
-It is also possible to run the application without installing `references-tractor`, this will simply disable the reference matching functionality.
 
 ## Running
 

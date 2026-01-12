@@ -247,7 +247,7 @@ for idx, orcid_input in enumerate(orcid_list):
                     st.markdown("**Contrôle de correspondance :**")
                     
                     # Configure matching thresholds
-                    confidence_interval = st.slider("Seuil de confiance (%)", 50, 100, (70, 95), 1)
+                    confidence_interval = st.slider("Seuil de confiance (%)", 50, 100, (60, 90), 1)
                     
                     # Prepare ORCID works and match references
                     orcid_works = prepare_orcid_works(df)
