@@ -104,8 +104,7 @@ for idx, orcid_input in enumerate(orcid_list):
     # Skip if already loaded
     if orcid_input not in st.session_state.orcid_data:
         with st.spinner(f'Chargement de {orcid_input}...'):
-            df, raw = fetch_orcid_data(orcid_input)
-            person_name = df['name'].iloc[0] if not df.empty and 'name' in df.columns else ''
+            df, raw, orcid_output, person_name = fetch_orcid_data(orcid_input)
             works_count = len(df)
 
             summary_works = {
@@ -150,6 +149,9 @@ for idx, orcid_input in enumerate(orcid_list):
     if st.session_state.orcid_data[orcid_input]['works_count'] > 0:
         with st.sidebar:
             st.success(f"Données ORCID OK {orcid_input}")
+    else:
+        with st.sidebar:
+            st.info(f"Profil ORCID chargé {orcid_input} (0 travaux)")
 
 # For backward compatibility with single ORCID code
 if len(orcid_list) == 1:
@@ -186,51 +188,53 @@ orcid_summary_df = pd.DataFrame([
     
 with tab_works:
     if len(orcid_list) == 1:
+        if works_count == 0:
+            st.warning(f"Aucun travail trouvé pour {person_name} ({orcid_input}).")
+        else:
+            col1, col2 = st.columns([4,1],vertical_alignment="bottom")
+            with col1:
+                st.header(f"{works_count} travaux trouvés pour {person_name}")
+            with col2:
+                st.link_button(f"Voir profil {orcid_input} :material/open_in_new:", raw.get('orcid-identifier', {}).get('uri'))     
 
-        col1, col2 = st.columns([4,1],vertical_alignment="bottom")
-        with col1:
-            st.header(f"{works_count} travaux trouvés pour {person_name}")
-        with col2:
-            st.link_button(f"Voir profil {orcid_input} :material/open_in_new:", raw.get('orcid-identifier', {}).get('uri'))     
-
-        # Add an option to filter by type
-        if 'type' in df.columns:
-            types = sorted(df['type'].dropna().unique().tolist())
-            selected_types = st.multiselect(
-                "Filtrer par type:",
-                types,
-                placeholder="Sélectionnez les types de travaux à afficher"
-                )
-            if selected_types:
-                filtered_df = df[df['type'].isin(selected_types)]
+            # Add an option to filter by type
+            if 'type' in df.columns:
+                types = sorted(df['type'].dropna().unique().tolist())
+                selected_types = st.multiselect(
+                    "Filtrer par type:",
+                    types,
+                    placeholder="Sélectionnez les types de travaux à afficher"
+                    )
+                if selected_types:
+                    filtered_df = df[df['type'].isin(selected_types)]
+                else:
+                    filtered_df = df
             else:
                 filtered_df = df
-        else:
-            filtered_df = df
-        
-        # Show a simple table of works
-        try:
-            st.dataframe(filtered_df,
-                            column_config={
-                                "put-code": None,
-                                "modified-date": None,
-                                "modified-by": None,
-                                "title": "Titre",
-                                "type": "Type",
-                                "journal-title": "Titre de revue",
-                                "publication-year": "Année",
-                                "external-ids": None,
-                                "visibility": None,
-                                "doi": "DOI",
-                                "url": st.column_config.LinkColumn("Lien", display_text=":material/open_in_new:"),
-                                "orcid": None,
-                                "name": None
-                                },
-                                column_order=["title", "journal-title", "publication-year", "type", "doi", "url"], 
-                            height="content", 
-                            hide_index=True)
-        except Exception:
-            st.write("Aucun travail disponible à afficher.")
+            
+            # Show a simple table of works
+            try:
+                st.dataframe(filtered_df,
+                                column_config={
+                                    "put-code": None,
+                                    "modified-date": None,
+                                    "modified-by": None,
+                                    "title": "Titre",
+                                    "type": "Type",
+                                    "journal-title": "Titre de revue",
+                                    "publication-year": "Année",
+                                    "external-ids": None,
+                                    "visibility": None,
+                                    "doi": "DOI",
+                                    "url": st.column_config.LinkColumn("Lien", display_text=":material/open_in_new:"),
+                                    "orcid": None,
+                                    "name": None
+                                    },
+                                    column_order=["title", "journal-title", "publication-year", "type", "doi", "url"], 
+                                height="content", 
+                                hide_index=True)
+            except Exception:
+                st.write("Aucun travail disponible à afficher.")
     else:
         st.warning("Cet affichage ne peut être utilisé qu'avec un seul ORCID à la fois. Utilisez l'onglet 'Résumé' pour voir les données agrégées.")
 
@@ -238,43 +242,51 @@ with tab_summary:
 
     if len(orcid_list) == 1:
 
-        col1, col2 = st.columns([4,1],vertical_alignment="bottom")
-        with col1:
-            st.header(f"Résumé du profil ORCID de {person_name}")
-        with col2:
-            st.link_button(f"Voir profil {orcid_input} :material/open_in_new:", raw.get('orcid-identifier', {}).get('uri'))
+        try:
+            col1, col2 = st.columns([4,1],vertical_alignment="bottom")
+            with col1:
+                st.header(f"Résumé du profil ORCID de {person_name}")
+            with col2:
+                st.link_button(f"Voir profil {orcid_input} :material/open_in_new:", raw.get('orcid-identifier', {}).get('uri'))
 
-        st.write(f"Créé le: {format_timestamp(raw.get('history', {}).get('submission-date', {}).get('value'))}")
+            st.write(f"Créé le: {format_timestamp(raw.get('history', {}).get('submission-date', {}).get('value'))}")
 
-        updated_table = {
-            "Section": [
-                ":material/person: Informations personnelles",
-                ":material/work: Emploi",
-                ":material/school: Formation et qualifications",
-                ":material/money: Financements",
-                ":material/docs: Travaux"
-            ],
-            "Complété": [
-                "✅" if raw.get('person', {}).get('name') else "❌",
-                f"✅ ({summary_employments['count']})" if summary_employments else "❌",
-                f"✅ ({summary_educations['count']})" if summary_educations else "❌",
-                f"✅ ({summary_fundings['count']})" if summary_fundings else "❌",
-                f"✅ ({summary_works['count']})" if summary_works else "❌"
-            ],
-            "Dernière modification": [
-                format_timestamp(updated_person) if updated_person else "N/A",
-                summary_employments['last_modified'] if summary_employments else "N/A",
-                summary_educations['last_modified'] if summary_educations else "N/A",
-                summary_fundings['last_modified'] if summary_fundings else "N/A",
-                summary_works['last_modified'] if summary_works else "N/A"
-            ]
-        }
-        
-        st.table(updated_table, border="horizontal")
+            updated_table = {
+                "Section": [
+                    ":material/person: Informations personnelles",
+                    ":material/work: Emploi",
+                    ":material/school: Formation et qualifications",
+                    ":material/money: Financements",
+                    ":material/docs: Travaux"
+                ],
+                "Complété": [
+                    "✅" if raw.get('person', {}).get('name') else "❌",
+                    f"✅ ({summary_employments['count']})" if summary_employments else "❌",
+                    f"✅ ({summary_educations['count']})" if summary_educations else "❌",
+                    f"✅ ({summary_fundings['count']})" if summary_fundings else "❌",
+                    f"✅ ({summary_works['count']})" if summary_works else "❌"
+                ],
+                "Dernière modification": [
+                    format_timestamp(updated_person) if updated_person else "N/A",
+                    summary_employments['last_modified'] if summary_employments else "N/A",
+                    summary_educations['last_modified'] if summary_educations else "N/A",
+                    summary_fundings['last_modified'] if summary_fundings else "N/A",
+                    summary_works['last_modified'] if summary_works else "N/A"
+                ]
+            }
+            
+            st.table(updated_table, border="horizontal")
 
-        st.subheader("Distribution des travaux par année de publication")
+            st.subheader("Distribution des travaux par année de publication")
 
-        st.bar_chart(df['publication-year'].value_counts().sort_index())
+            if works_count > 0 and 'publication-year' in df.columns:
+                st.bar_chart(df['publication-year'].value_counts().sort_index())
+            else:
+                st.info("Aucune donnée de publication disponible pour générer le graphique.")
+        except Exception as e:
+            st.error(f"Erreur lors de l'affichage du résumé: {str(e)}")
+            import traceback
+            st.code(traceback.format_exc())
 
     else:
         st.dataframe(orcid_summary_df, column_config={
@@ -283,14 +295,14 @@ with tab_summary:
             "drilldown": st.column_config.LinkColumn("Détails Travaux", display_text=":material/open_in_new:"),
             "person_name": "Nom",
             "works_count": "Nbre travaux",
-            "works_last_modified": "Modif. travaux",
+            "works_last_modified": "Màj travaux",
             "employments_count": None,
-            "employments_last_modified": "Modif. emplois",
+            "employments_last_modified": "Màj emplois",
             "educations_count": None,
-            "educations_last_modified": "Modif. formations",
+            "educations_last_modified": "Màj formations",
             "fundings_count": None,
-            "fundings_last_modified": "Modif. financements",
-            "person_last_modified": "Modif. profil"
+            "fundings_last_modified": "Màj financements",
+            "person_last_modified": "Màj profil"
             },
             column_order=[
                 "url", "person_name","person_last_modified","works_count","works_last_modified","drilldown","employment_last_modified",

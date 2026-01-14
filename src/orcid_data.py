@@ -89,7 +89,7 @@ def _extract_external_ids(summary: Dict[str, Any]) -> List[Dict[str, str]]:
 #   A tuple of (DataFrame, raw_json) where:
 #   - DataFrame contains publication data
 #   - raw_json is the full API response JSON object (or None if error)
-def fetch_orcid_data(orcid: str, timeout: int = 10) -> tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
+def fetch_orcid_data(orcid: str, timeout: int = 10) -> tuple[pd.DataFrame, Optional[Dict[str, Any]], Optional[str], Optional[str]]:
 	url = f"https://pub.orcid.org/v3.0/{orcid}/record"
 	headers = {"Accept": "application/json"}
 
@@ -108,9 +108,7 @@ def fetch_orcid_data(orcid: str, timeout: int = 10) -> tuple[pd.DataFrame, Optio
 				"external-ids",
 				"visibility",
 				"url",
-				"doi",
-				"orcid",
-				"name",
+				"doi"
 			]
 		)
 		return (empty_df, None)
@@ -156,11 +154,8 @@ def fetch_orcid_data(orcid: str, timeout: int = 10) -> tuple[pd.DataFrame, Optio
 
 	# Build a DataFrame from the extracted publications
 	df = pd.DataFrame(publications)
-	# Add metadata columns for convenience
-	if not df.empty:
-		df["orcid"] = orcid
-		df["name"] = researcher_name
-	else:
+
+	if df.empty:
 		# Ensure an empty DataFrame has the expected columns
 		df = pd.DataFrame(
 			columns=[
@@ -174,9 +169,7 @@ def fetch_orcid_data(orcid: str, timeout: int = 10) -> tuple[pd.DataFrame, Optio
 				"external-ids",
 				"visibility",
 				"url",
-				"doi",
-				"orcid",
-				"name",
+				"doi"
 			]
 		)
-	return (df, data)
+	return (df, data, orcid, researcher_name)
