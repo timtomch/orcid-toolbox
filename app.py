@@ -7,6 +7,10 @@ import importlib.util
 # TODO: Use gettext for localization
 # The user locale is available at st.context.locale
 
+def reset_session_state():
+    for key in list(st.session_state.keys()):
+        st.session_state.pop(key)
+
 st.set_page_config(page_title="Boîte à outils ORCID", page_icon=":toolbox:", layout="wide", initial_sidebar_state="expanded")
 
 with st.sidebar:
@@ -16,7 +20,7 @@ with st.sidebar:
     ''')
 
     if "orcid_list" in st.session_state:
-        st.button("Changer d'ORCID", type="secondary", on_click=lambda: st.session_state.pop("orcid_list"))
+        st.button("Changer d'ORCID", type="secondary", on_click=reset_session_state)
 
     st.header("Statut")
 
@@ -30,9 +34,9 @@ if st.query_params and "tab" in st.query_params and st.query_params["tab"] in ["
         case "suggestions":
             default_tab = "Suggestions"
 else:
-    default_tab = None
+    default_tab = "Résumé"
 
-tab_works, tab_compare, tab_summary, tab_suggest = st.tabs(["Travaux", "Comparateur", "Résumé", "Suggestions"], default=default_tab)
+tab_summary, tab_works, tab_compare, tab_suggest = st.tabs(["Résumé", "Travaux", "Comparateur", "Suggestions"], default=default_tab)
 
 # Check for ORCID from query params first and validate immediately
 if "orcid_list" not in st.session_state:
@@ -89,78 +93,24 @@ if "orcid_list" not in st.session_state:
 # Retrieve from session state
 orcid_list = st.session_state.orcid_list
 
-# Process each ORCID
+# Initialize storage for ORCID data if not exists
+if 'orcid_data' not in st.session_state:
+    st.session_state.orcid_data = {}
+
+# Process each ORCID and store data
 for idx, orcid_input in enumerate(orcid_list):     
+    # Skip if already loaded
+    if orcid_input not in st.session_state.orcid_data:
         with st.spinner(f'Chargement de {orcid_input}...'):
             df, raw = fetch_orcid_data(orcid_input)
             person_name = df['name'].iloc[0] if not df.empty and 'name' in df.columns else ''
             works_count = len(df)
-        
-        with tab_works:
-            if works_count > 0:
-                with st.sidebar:
-                    st.success(f"Données ORCID OK {orcid_input}")
 
-                col1, col2 = st.columns([4,1],vertical_alignment="bottom")
-                with col1:
-                    st.header(f"{works_count} travaux trouvés pour {person_name}")
-                with col2:
-                    st.link_button(f"Voir profil {orcid_input} :material/open_in_new:", raw.get('orcid-identifier', {}).get('uri'))     
-
-                # Add an option to filter by type
-                if 'type' in df.columns:
-                    types = sorted(df['type'].dropna().unique().tolist())
-                    selected_types = st.multiselect(
-                        "Filtrer par type:",
-                        types,
-                        placeholder="Sélectionnez les types de travaux à afficher"
-                        )
-                    if selected_types:
-                        filtered_df = df[df['type'].isin(selected_types)]
-                    else:
-                        filtered_df = df
-                else:
-                    filtered_df = df
-                
-                # Show a simple table of works
-                try:
-                    st.dataframe(filtered_df,
-                                 column_config={
-                                     "put-code": None,
-                                     "modified-date": None,
-                                     "modified-by": None,
-                                     "title": "Titre",
-                                     "type": "Type",
-                                     "journal-title": "Titre de revue",
-                                     "publication-year": "Année",
-                                     "external-ids": None,
-                                     "visibility": None,
-                                     "doi": "DOI",
-                                     "url": st.column_config.LinkColumn("Lien", display_text=":material/open_in_new:"),
-                                     "orcid": None,
-                                     "name": None
-                                     },
-                                     column_order=["title", "journal-title", "publication-year", "type", "doi", "url"], 
-                                 height="content", 
-                                 hide_index=True)
-                except Exception:
-                    st.write("Aucun travail disponible à afficher.")
-
-        with tab_summary:
-
-            col1, col2 = st.columns([4,1],vertical_alignment="bottom")
-            with col1:
-                st.header(f"Résumé du profil ORCID de {person_name}")
-            with col2:
-                st.link_button(f"Voir profil {orcid_input} :material/open_in_new:", raw.get('orcid-identifier', {}).get('uri'))
-        
-            st.write(f"Créé le: {format_timestamp(raw.get('history', {}).get('submission-date', {}).get('value'))}")
-            
             summary_works = {
                 "count": works_count,
                 "last_modified": format_timestamp(raw.get('activities-summary', {}).get('works', {}). get('last-modified-date', {}).get('value'),True)
                 } if raw.get('activities-summary', {}).get('works', {}).get('last-modified-date') else None
-            
+        
             summary_employments = {
                 "count": raw.get('activities-summary', {}).get('employments').get('affiliation-group', []).__len__(),
                 "last_modified": format_timestamp(raw.get('activities-summary', {}).get('employments', {}). get('last-modified-date', {}).get('value'))
@@ -175,190 +125,324 @@ for idx, orcid_input in enumerate(orcid_list):
                 "count": raw.get('activities-summary', {}).get('fundings').get('affiliation-group', []).__len__(),
                 "last_modified": format_timestamp(raw.get('activities-summary', {}).get('fundings', {}). get('last-modified-date', {}).get('value'),True)
                 } if raw.get('activities-summary', {}).get('fundings', {}).get('last-modified-date') else None
-
+            
             try:
                 updated_person = raw.get('person', {}).get('last-modified-date', {}).get('value')
             except Exception:
                 updated_person = None
 
-            updated_table = {
-                "Section": [
-                    ":material/person: Informations personnelles",
-                    ":material/work: Emploi",
-                    ":material/school: Formation et qualifications",
-                    ":material/money: Financements",
-                    ":material/docs: Travaux"
-                ],
-                "Complété": [
-                    "✅" if raw.get('person', {}).get('name') else "❌",
-                    f"✅ ({summary_employments['count']})" if summary_employments else "❌",
-                    f"✅ ({summary_educations['count']})" if summary_educations else "❌",
-                    f"✅ ({summary_fundings['count']})" if summary_fundings else "❌",
-                    f"✅ ({summary_works['count']})" if summary_works else "❌"
-                ],
-                "Dernière modification": [
-                    format_timestamp(updated_person) if updated_person else "N/A",
-                    summary_employments['last_modified'] if summary_employments else "N/A",
-                    summary_educations['last_modified'] if summary_educations else "N/A",
-                    summary_fundings['last_modified'] if summary_fundings else "N/A",
-                    summary_works['last_modified'] if summary_works else "N/A"
-                ]
+            # Store data in session state
+            st.session_state.orcid_data[orcid_input] = {
+                'df': df,
+                'raw': raw,
+                'person_name': person_name,
+                'works_count': works_count,
+                'summary_works': summary_works,
+                'summary_employments': summary_employments,
+                'summary_educations': summary_educations,
+                'summary_fundings': summary_fundings,
+                'updated_person': updated_person
             }
+    
+    # Show status in sidebar
+    if st.session_state.orcid_data[orcid_input]['works_count'] > 0:
+        with st.sidebar:
+            st.success(f"Données ORCID OK {orcid_input}")
+
+# For backward compatibility with single ORCID code
+if len(orcid_list) == 1:
+    orcid_input = orcid_list[0]
+    df = st.session_state.orcid_data[orcid_input]['df']
+    raw = st.session_state.orcid_data[orcid_input]['raw']
+    person_name = st.session_state.orcid_data[orcid_input]['person_name']
+    works_count = st.session_state.orcid_data[orcid_input]['works_count']
+    summary_works = st.session_state.orcid_data[orcid_input]['summary_works']
+    summary_employments = st.session_state.orcid_data[orcid_input]['summary_employments']
+    summary_educations = st.session_state.orcid_data[orcid_input]['summary_educations']
+    summary_fundings = st.session_state.orcid_data[orcid_input]['summary_fundings']
+    updated_person = st.session_state.orcid_data[orcid_input]['updated_person']
+
+# Create summary dataframe from all loaded ORCID data
+orcid_summary_df = pd.DataFrame([
+    {
+        'orcid': orcid_id,
+        'url': 'https://orcid.org/' + orcid_id,
+        'person_name': data['person_name'],
+        'works_count': data['works_count'],
+        'works_last_modified': data['summary_works']['last_modified'] if data['summary_works'] else None,
+        'employments_count': data['summary_employments']['count'] if data['summary_employments'] else 0,
+        'employments_last_modified': data['summary_employments']['last_modified'] if data['summary_employments'] else None,
+        'educations_count': data['summary_educations']['count'] if data['summary_educations'] else 0,
+        'educations_last_modified': data['summary_educations']['last_modified'] if data['summary_educations'] else None,
+        'fundings_count': data['summary_fundings']['count'] if data['summary_fundings'] else 0,
+        'fundings_last_modified': data['summary_fundings']['last_modified'] if data['summary_fundings'] else None,
+        'person_last_modified': format_timestamp(data['updated_person']) if data['updated_person'] else None
+    }
+    for orcid_id, data in st.session_state.orcid_data.items()
+])
+    
+with tab_works:
+    if len(orcid_list) == 1:
+
+        col1, col2 = st.columns([4,1],vertical_alignment="bottom")
+        with col1:
+            st.header(f"{works_count} travaux trouvés pour {person_name}")
+        with col2:
+            st.link_button(f"Voir profil {orcid_input} :material/open_in_new:", raw.get('orcid-identifier', {}).get('uri'))     
+
+        # Add an option to filter by type
+        if 'type' in df.columns:
+            types = sorted(df['type'].dropna().unique().tolist())
+            selected_types = st.multiselect(
+                "Filtrer par type:",
+                types,
+                placeholder="Sélectionnez les types de travaux à afficher"
+                )
+            if selected_types:
+                filtered_df = df[df['type'].isin(selected_types)]
+            else:
+                filtered_df = df
+        else:
+            filtered_df = df
+        
+        # Show a simple table of works
+        try:
+            st.dataframe(filtered_df,
+                            column_config={
+                                "put-code": None,
+                                "modified-date": None,
+                                "modified-by": None,
+                                "title": "Titre",
+                                "type": "Type",
+                                "journal-title": "Titre de revue",
+                                "publication-year": "Année",
+                                "external-ids": None,
+                                "visibility": None,
+                                "doi": "DOI",
+                                "url": st.column_config.LinkColumn("Lien", display_text=":material/open_in_new:"),
+                                "orcid": None,
+                                "name": None
+                                },
+                                column_order=["title", "journal-title", "publication-year", "type", "doi", "url"], 
+                            height="content", 
+                            hide_index=True)
+        except Exception:
+            st.write("Aucun travail disponible à afficher.")
+    else:
+        st.warning("Cet affichage ne peut être utilisé qu'avec un seul ORCID à la fois. Utilisez l'onglet 'Résumé' pour voir les données agrégées.")
+
+with tab_summary:
+
+    if len(orcid_list) == 1:
+
+        col1, col2 = st.columns([4,1],vertical_alignment="bottom")
+        with col1:
+            st.header(f"Résumé du profil ORCID de {person_name}")
+        with col2:
+            st.link_button(f"Voir profil {orcid_input} :material/open_in_new:", raw.get('orcid-identifier', {}).get('uri'))
+
+        st.write(f"Créé le: {format_timestamp(raw.get('history', {}).get('submission-date', {}).get('value'))}")
+
+        updated_table = {
+            "Section": [
+                ":material/person: Informations personnelles",
+                ":material/work: Emploi",
+                ":material/school: Formation et qualifications",
+                ":material/money: Financements",
+                ":material/docs: Travaux"
+            ],
+            "Complété": [
+                "✅" if raw.get('person', {}).get('name') else "❌",
+                f"✅ ({summary_employments['count']})" if summary_employments else "❌",
+                f"✅ ({summary_educations['count']})" if summary_educations else "❌",
+                f"✅ ({summary_fundings['count']})" if summary_fundings else "❌",
+                f"✅ ({summary_works['count']})" if summary_works else "❌"
+            ],
+            "Dernière modification": [
+                format_timestamp(updated_person) if updated_person else "N/A",
+                summary_employments['last_modified'] if summary_employments else "N/A",
+                summary_educations['last_modified'] if summary_educations else "N/A",
+                summary_fundings['last_modified'] if summary_fundings else "N/A",
+                summary_works['last_modified'] if summary_works else "N/A"
+            ]
+        }
+        
+        st.table(updated_table, border="horizontal")
+
+        st.subheader("Distribution des travaux par année de publication")
+
+        st.bar_chart(df['publication-year'].value_counts().sort_index())
+
+    else:
+        st.dataframe(orcid_summary_df, column_config={
+            "orcid": None,
+            "url": st.column_config.LinkColumn("ORCID", display_text="https://orcid.org/(.*)"),
+            "person_name": "Nom",
+            "works_count": "Nbre travaux",
+            "works_last_modified": "Modif. travaux",
+            "employments_count": None,
+            "employments_last_modified": "Modif. emplois",
+            "educations_count": None,
+            "educations_last_modified": "Modif. formations",
+            "fundings_count": None,
+            "fundings_last_modified": "Modif. financements",
+            "person_last_modified": "Modif. profil"
+            },
+            column_order=[
+                "url", "person_name","person_last_modified","works_count","works_last_modified","employment_last_modified",
+                "educations_last_modified","fundings_last_modified"],
+            height="content",
+            hide_index=True)
+
+with tab_compare:
+
+    if len(orcid_list) > 1:
+        st.warning("Le comparateur ne peut être utilisé qu'avec un seul ORCID à la fois. Utilisez l'onglet 'Résumé' pour voir les données agrégées.")
+        st.stop()
+    
+    if importlib.util.find_spec("transformers") is None and importlib.util.find_spec("references_tractor") is None:
+        st.warning("Cette fonctionalité nécessite la présence d'une bibliothèque pour l'extraction des références, telle que 'transformers' ou 'references_tractor'. Veuillez installer au moins l'une de ces bibliothèques.")
+        st.stop()
+
+    col_file, col_controls = st.columns(2)
+
+    with col_file:
+
+        refs_file = st.file_uploader("Téléchargez un fichier texte contenant des références bibliographiques à extraire :", type=["txt"])
+        
+        # Initialize variables
+        matched_refs = []
+        unmatched_refs = []
+        
+        if refs_file:
+            source_refs = refs_file.read().decode("utf-8")
             
-            st.table(updated_table, border="horizontal")
+            # Extract and process references
+            screened_refs, invalid_refs = extract_and_process_references(source_refs)
 
-            st.subheader("Distribution des travaux par année de publication")
+            with st.sidebar:
+                st.success(f"{len(screened_refs)} références valides extraites, {len(invalid_refs)} références invalides ignorées.")
 
-            st.bar_chart(df['publication-year'].value_counts().sort_index())
-
-        with tab_compare:
-
-            if len(orcid_list) > 1:
-                st.warning("Le comparateur ne peut être utilisé qu'avec un seul ORCID à la fois. Veuillez fournir un seul ORCID.")
-                st.stop()
+    with col_controls:
+        
+        if refs_file:
+            # Compare references with fuzzy matching
+            st.markdown("**Contrôle de correspondance :**")
             
-            if importlib.util.find_spec("transformers") is None and importlib.util.find_spec("references_tractor") is None:
-                st.warning("Cette fonctionalité nécessite la présence d'une bibliothèque pour l'extraction des références, telle que 'transformers' ou 'references_tractor'. Veuillez installer au moins l'une de ces bibliothèques.")
-                st.stop()
-
-            col_file, col_controls = st.columns(2)
-
-            with col_file:
-
-                refs_file = st.file_uploader("Téléchargez un fichier texte contenant des références bibliographiques à extraire :", type=["txt"])
-                
-                # Initialize variables
-                matched_refs = []
-                unmatched_refs = []
-                
-                if refs_file:
-                    source_refs = refs_file.read().decode("utf-8")
-                    
-                    # Extract and process references
-                    screened_refs, invalid_refs = extract_and_process_references(source_refs)
-
-                    with st.sidebar:
-                        st.success(f"{len(screened_refs)} références valides extraites, {len(invalid_refs)} références invalides ignorées.")
-
-            with col_controls:
-                
-                if refs_file:
-                    # Compare references with fuzzy matching
-                    st.markdown("**Contrôle de correspondance :**")
-                    
-                    # Configure matching thresholds
-                    confidence_interval = st.slider("Seuil de confiance (%)", 50, 100, (60, 90), 1)
-                    
-                    # Prepare ORCID works and match references
-                    orcid_works = prepare_orcid_works(df)
-                    matched_refs, unmatched_refs = match_references_to_orcid(screened_refs, orcid_works, confidence_interval[1])
-                    
-                    # Display statistics
-                    col_a, col_b, col_c = st.columns(3)
-                    with col_a:
-                        st.metric("Références extraites", len(screened_refs))
-                    with col_b:
-                        st.metric("Trouvées dans ORCID", len(matched_refs))
-                    with col_c:
-                        st.metric("Manquantes dans ORCID", len(unmatched_refs))
-                        
-
-            if matched_refs:
-                st.subheader(f"✅ {len(matched_refs)} références trouvées dans ORCID")
-                sorting_option = st.segmented_control("Trier par :", ["Score", "Alpha", "Ordre"], key="sorting_option")
-                for ref in matched_refs:
-                    col_source, col_target = st.columns(2)
-                    with col_source:
-                        ref_number = ref['ref_number']
-                        ref_ner = ref['ref_ner']
-                        ref_title_display = ref_ner["TITLE"][0] if "TITLE" in ref_ner and ref_ner["TITLE"] else ref["text"][:50] + "..."
-                        with st.expander(f"[{ref_number}] {ref_title_display}"):
-                            st.caption("Texte original:")
-                            st.write(ref.get('ref', {}).get('text', ''))
-                            col_inner, col_outer = st.columns(2)
-                            with col_inner:
-                                if ref.get('ref_journal'):
-                                    st.caption(f"Journal: {ref['ref_journal'] or 'N/A'}")
-                                if ref.get('ref_year'):
-                                    st.caption(f"Année: {ref['ref_year'] or 'N/A'}")
-                                if ref.get('ref_doi'):
-                                    st.caption(f"DOI: {ref['ref_doi'] or 'N/A'}")
-                            with col_outer:
-                                st.caption("Entités détectées :")
-                                st.json(ref_ner, expanded=False)
-
-                    with col_target:
-                        confidence_color = "🟢" if ref['confidence'] >= 90 else "🟡" if ref['confidence'] >= 80 else "🟠"
-                        with st.expander(f"{confidence_color} {ref['confidence']:.0f}% - {ref['orcid_title']}"):
-                            st.caption(f"Score titre: {ref['title_score']}")
-                            if ref.get('orcid_journal'):
-                                st.caption(f"Journal: {ref['orcid_journal'] or 'N/A'} (score {ref['journal_score']})")
-                            if ref.get('orcid_year'):
-                                st.caption(f"Année: {ref['orcid_year'] or 'N/A'} (score {ref['year_score']})")
-                            if ref.get('orcid_doi'):
-                                st.caption(f"DOI: {ref['orcid_doi'] or 'N/A'} (score {ref['doi_score']})")
+            # Configure matching thresholds
+            confidence_interval = st.slider("Seuil de confiance (%)", 50, 100, (60, 90), 1)
             
-            if unmatched_refs:
-                st.subheader(f"⚠️ Références à valider")
-
-                # Sort by confidence descending
-                unmatched_refs_sorted = sorted(unmatched_refs, key=lambda x: x['confidence'], reverse=True)
-
-                for ref in unmatched_refs_sorted:
-                    if confidence_interval[0] <= ref['confidence'] <= confidence_interval[1]:
-                        col_source, col_target = st.columns(2)
-                        with col_source:
-                            ref_number = ref['ref_number']
-                            ref_ner = ref['ref_ner']
-                            ref_title_display = ref_ner["TITLE"][0] if "TITLE" in ref_ner and ref_ner["TITLE"] else ref["text"][:50] + "..."
-                            with st.expander(f"[{ref_number}] {ref_title_display}"):
-                                st.caption("Texte original:")
-                                st.write(ref.get('ref', {}).get('text', ''))
-                                col_inner, col_outer = st.columns(2)
-                                with col_inner:
-                                    if ref.get('ref_journal'):
-                                        st.caption(f"Journal: {ref['ref_journal'] or 'N/A'}")
-                                    if ref.get('ref_year'):
-                                        st.caption(f"Année: {ref['ref_year'] or 'N/A'}")
-                                    if ref.get('ref_doi'):
-                                        st.caption(f"DOI: {ref['ref_doi'] or 'N/A'}")
-                                with col_outer:
-                                    st.caption("Entités détectées :")
-                                    st.json(ref_ner, expanded=False)
-
-                        with col_target:
-                            confidence_color = "🟢" if ref['confidence'] >= 90 else "🟡" if ref['confidence'] >= 80 else "🟠"
-                            with st.expander(f"{confidence_color} {ref['confidence']:.0f}% - {ref['orcid_title']}"):
-                                st.caption(f"Score titre: {ref['title_score']}")
-                                if ref.get('orcid_journal'):
-                                    st.caption(f"Journal: {ref['orcid_journal'] or 'N/A'} (score {ref['journal_score']})")
-                                if ref.get('orcid_year'):
-                                    st.caption(f"Année: {ref['orcid_year'] or 'N/A'} (score {ref['year_score']})")
-                                if ref.get('orcid_doi'):    
-                                    st.caption(f"DOI: {ref['orcid_doi'] or 'N/A'} (score {ref['doi_score']})")
+            # Prepare ORCID works and match references
+            orcid_works = prepare_orcid_works(df)
+            matched_refs, unmatched_refs = match_references_to_orcid(screened_refs, orcid_works, confidence_interval[1])
+            
+            # Display statistics
+            col_a, col_b, col_c = st.columns(3)
+            with col_a:
+                st.metric("Références extraites", len(screened_refs))
+            with col_b:
+                st.metric("Trouvées dans ORCID", len(matched_refs))
+            with col_c:
+                st.metric("Manquantes dans ORCID", len(unmatched_refs))
                 
-                st.subheader(f"❌ Références non trouvées")
 
-                for ref in unmatched_refs_sorted:
-                    if confidence_interval[0] > ref['confidence'] :
-                        col_source, col_target = st.columns(2)
-                        with col_source:
-                            ref_number = ref['ref_number']
-                            ref_ner = ref['ref_ner']
-                            ref_title_display = ref_ner["TITLE"][0] if "TITLE" in ref_ner and ref_ner["TITLE"] else ref["text"][:50] + "..."
-                            with st.expander(f"[{ref_number}] {ref_title_display}"):
-                                st.write(ref.get('ref', {}).get('text', ''))
-                                col_inner, col_outer = st.columns(2)
-                                with col_inner:
-                                    if ref.get('ref_journal'):
-                                        st.caption(f"Journal: {ref['ref_journal'] or 'N/A'}")
-                                    if ref.get('ref_year'):
-                                        st.caption(f"Année: {ref['ref_year'] or 'N/A'}")
-                                    if ref.get('ref_doi'):
-                                        st.caption(f"DOI: {ref['ref_doi'] or 'N/A'}")
-                                with col_outer:
-                                    st.caption("Entités détectées :")
-                                    st.json(ref_ner, expanded=False)
+    if matched_refs:
+        st.subheader(f"✅ {len(matched_refs)} références trouvées dans ORCID")
+        sorting_option = st.segmented_control("Trier par :", ["Score", "Alpha", "Ordre"], key="sorting_option")
+        for ref in matched_refs:
+            col_source, col_target = st.columns(2)
+            with col_source:
+                ref_number = ref['ref_number']
+                ref_ner = ref['ref_ner']
+                ref_title_display = ref_ner["TITLE"][0] if "TITLE" in ref_ner and ref_ner["TITLE"] else ref["text"][:50] + "..."
+                with st.expander(f"[{ref_number}] {ref_title_display}"):
+                    st.caption("Texte original:")
+                    st.write(ref.get('ref', {}).get('text', ''))
+                    col_inner, col_outer = st.columns(2)
+                    with col_inner:
+                        if ref.get('ref_journal'):
+                            st.caption(f"Journal: {ref['ref_journal'] or 'N/A'}")
+                        if ref.get('ref_year'):
+                            st.caption(f"Année: {ref['ref_year'] or 'N/A'}")
+                        if ref.get('ref_doi'):
+                            st.caption(f"DOI: {ref['ref_doi'] or 'N/A'}")
+                    with col_outer:
+                        st.caption("Entités détectées :")
+                        st.json(ref_ner, expanded=False)
+
+            with col_target:
+                confidence_color = "🟢" if ref['confidence'] >= 90 else "🟡" if ref['confidence'] >= 80 else "🟠"
+                with st.expander(f"{confidence_color} {ref['confidence']:.0f}% - {ref['orcid_title']}"):
+                    st.caption(f"Score titre: {ref['title_score']}")
+                    if ref.get('orcid_journal'):
+                        st.caption(f"Journal: {ref['orcid_journal'] or 'N/A'} (score {ref['journal_score']})")
+                    if ref.get('orcid_year'):
+                        st.caption(f"Année: {ref['orcid_year'] or 'N/A'} (score {ref['year_score']})")
+                    if ref.get('orcid_doi'):
+                        st.caption(f"DOI: {ref['orcid_doi'] or 'N/A'} (score {ref['doi_score']})")
+    
+    if unmatched_refs:
+        st.subheader(f"⚠️ Références à valider")
+
+        # Sort by confidence descending
+        unmatched_refs_sorted = sorted(unmatched_refs, key=lambda x: x['confidence'], reverse=True)
+
+        for ref in unmatched_refs_sorted:
+            if confidence_interval[0] <= ref['confidence'] <= confidence_interval[1]:
+                col_source, col_target = st.columns(2)
+                with col_source:
+                    ref_number = ref['ref_number']
+                    ref_ner = ref['ref_ner']
+                    ref_title_display = ref_ner["TITLE"][0] if "TITLE" in ref_ner and ref_ner["TITLE"] else ref["text"][:50] + "..."
+                    with st.expander(f"[{ref_number}] {ref_title_display}"):
+                        st.caption("Texte original:")
+                        st.write(ref.get('ref', {}).get('text', ''))
+                        col_inner, col_outer = st.columns(2)
+                        with col_inner:
+                            if ref.get('ref_journal'):
+                                st.caption(f"Journal: {ref['ref_journal'] or 'N/A'}")
+                            if ref.get('ref_year'):
+                                st.caption(f"Année: {ref['ref_year'] or 'N/A'}")
+                            if ref.get('ref_doi'):
+                                st.caption(f"DOI: {ref['ref_doi'] or 'N/A'}")
+                        with col_outer:
+                            st.caption("Entités détectées :")
+                            st.json(ref_ner, expanded=False)
+
+                with col_target:
+                    confidence_color = "🟢" if ref['confidence'] >= 90 else "🟡" if ref['confidence'] >= 80 else "🟠"
+                    with st.expander(f"{confidence_color} {ref['confidence']:.0f}% - {ref['orcid_title']}"):
+                        st.caption(f"Score titre: {ref['title_score']}")
+                        if ref.get('orcid_journal'):
+                            st.caption(f"Journal: {ref['orcid_journal'] or 'N/A'} (score {ref['journal_score']})")
+                        if ref.get('orcid_year'):
+                            st.caption(f"Année: {ref['orcid_year'] or 'N/A'} (score {ref['year_score']})")
+                        if ref.get('orcid_doi'):    
+                            st.caption(f"DOI: {ref['orcid_doi'] or 'N/A'} (score {ref['doi_score']})")
+        
+        st.subheader(f"❌ Références non trouvées")
+
+        for ref in unmatched_refs_sorted:
+            if confidence_interval[0] > ref['confidence'] :
+                col_source, col_target = st.columns(2)
+                with col_source:
+                    ref_number = ref['ref_number']
+                    ref_ner = ref['ref_ner']
+                    ref_title_display = ref_ner["TITLE"][0] if "TITLE" in ref_ner and ref_ner["TITLE"] else ref["text"][:50] + "..."
+                    with st.expander(f"[{ref_number}] {ref_title_display}"):
+                        st.write(ref.get('ref', {}).get('text', ''))
+                        col_inner, col_outer = st.columns(2)
+                        with col_inner:
+                            if ref.get('ref_journal'):
+                                st.caption(f"Journal: {ref['ref_journal'] or 'N/A'}")
+                            if ref.get('ref_year'):
+                                st.caption(f"Année: {ref['ref_year'] or 'N/A'}")
+                            if ref.get('ref_doi'):
+                                st.caption(f"DOI: {ref['ref_doi'] or 'N/A'}")
+                        with col_outer:
+                            st.caption("Entités détectées :")
+                            st.json(ref_ner, expanded=False)
             
 
-
+with tab_suggest:
+    st.warning("Cette section n'est pas encore implémentée.")

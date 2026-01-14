@@ -1,3 +1,4 @@
 *.pyc
 lib/*
 /.vscode
+test-files
