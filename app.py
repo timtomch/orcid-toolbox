@@ -61,18 +61,45 @@ if "orcid_list" not in st.session_state:
         # Store validated ORCID list from URL
         st.session_state.orcid_list = orcid_list
     else:
-        # Show input field if no URL parameter
-        orcid_input = st.text_input("Renseignez votre numéro ORCID (séparez plusieurs ORCIDs par des virgules):", key="orcid_input_field")
+
+        col_input, col_file = st.columns(2)
+
+        with col_input:
+            orcid_input = st.text_input("Renseignez votre numéro ORCID (séparez plusieurs ORCIDs par des virgules):", key="orcid_input_field")
+
+        with col_file:
+            orcid_file = st.file_uploader("Ou téléversez un fichier (format texte, ORCIDs séparés par des virgules ou un par ligne):", type=["txt"], key="orcid_file_upload")
         
-        # Validate on button click OR when input exists (Enter key pressed)
-        if (st.button("Valider", type="primary") or orcid_input) and orcid_input:
+        # Process file if uploaded
+        orcid_list_from_file = []
+        if orcid_file:
+            file_content = orcid_file.read().decode("utf-8")
+            # Parse by newlines and commas
+            for line in file_content.split('\n'):
+                for orcid in line.split(','):
+                    cleaned = orcid.strip()
+                    if cleaned:
+                        orcid_list_from_file.append(cleaned)
+        
+        # Validate on button click OR when input exists (Enter key pressed) OR when file is uploaded
+        if (st.button("Valider", type="primary") or orcid_input or orcid_file) and (orcid_input or orcid_file):
             # Parse and normalize orcid_input to always be a list
-            if isinstance(orcid_input, str):
-                orcid_list = [orcid.strip() for orcid in orcid_input.split(',') if orcid.strip()]
-            elif isinstance(orcid_input, list):
-                orcid_list = [orcid.strip() for orcid in orcid_input if orcid.strip()]
+            if orcid_input:
+                if isinstance(orcid_input, str):
+                    orcid_list = [orcid.strip() for orcid in orcid_input.split(',') if orcid.strip()]
+                elif isinstance(orcid_input, list):
+                    orcid_list = [orcid.strip() for orcid in orcid_input if orcid.strip()]
+                else:
+                    orcid_list = [str(orcid_input).strip()]
             else:
-                orcid_list = [str(orcid_input).strip()]
+                orcid_list = []
+            
+            # Merge with file input
+            orcid_list.extend(orcid_list_from_file)
+            
+            # Remove duplicates while preserving order
+            seen = set()
+            orcid_list = [x for x in orcid_list if not (x in seen or seen.add(x))]
             
             if not orcid_list:
                 st.error("Veuillez fournir au moins un ORCID valide.")
@@ -200,13 +227,16 @@ with tab_works:
             # Add an option to filter by type
             if 'type' in df.columns:
                 types = sorted(df['type'].dropna().unique().tolist())
-                selected_types = st.multiselect(
-                    "Filtrer par type:",
-                    types,
-                    placeholder="Sélectionnez les types de travaux à afficher"
-                    )
-                if selected_types:
-                    filtered_df = df[df['type'].isin(selected_types)]
+                if types:
+                    selected_types = st.multiselect(
+                        "Filtrer par type:",
+                        types,
+                        placeholder="Sélectionnez les types de travaux à afficher"
+                        )
+                    if selected_types:
+                        filtered_df = df[df['type'].isin(selected_types)]
+                    else:
+                        filtered_df = df
                 else:
                     filtered_df = df
             else:
@@ -274,7 +304,15 @@ with tab_summary:
                     summary_works['last_modified'] if summary_works else "N/A"
                 ]
             }
-            
+
+            # If works have not been modified in a while, add a recommendation
+            try:
+                if format_timestamp(raw.get('activities-summary', {}).get('works', {}). get('last-modified-date', {}).get('value'),True, True)[1] != "fresh":
+                    with tab_suggest:
+                        st.info(f"Votre section Travaux n'a pas été mise à jour depuis le {summary_works['last_modified']}. Pensez à ajouter ou mettre à jour vos publications pour refléter vos travaux récents.")
+            except Exception:
+                pass
+
             st.table(updated_table, border="horizontal")
 
             st.subheader("Distribution des travaux par année de publication")
@@ -282,7 +320,7 @@ with tab_summary:
             if works_count > 0 and 'publication-year' in df.columns:
                 st.bar_chart(df['publication-year'].value_counts().sort_index())
             else:
-                st.info("Aucune donnée de publication disponible pour générer le graphique.")
+                st.warning("Aucune donnée de publication disponible pour générer le graphique.")
         except Exception as e:
             st.error(f"Erreur lors de l'affichage du résumé: {str(e)}")
             import traceback
@@ -294,7 +332,7 @@ with tab_summary:
             "url": st.column_config.LinkColumn("ORCID", display_text="https://orcid.org/(.*)"),
             "drilldown": st.column_config.LinkColumn("Détails Travaux", display_text=":material/open_in_new:"),
             "person_name": "Nom",
-            "works_count": "Nbre travaux",
+            "works_count": "Travaux",
             "works_last_modified": "Màj travaux",
             "employments_count": None,
             "employments_last_modified": "Màj emplois",
@@ -314,6 +352,10 @@ with tab_compare:
 
     if len(orcid_list) > 1:
         st.warning("Le comparateur ne peut être utilisé qu'avec un seul ORCID à la fois. Utilisez l'onglet 'Résumé' pour voir les données agrégées.")
+        st.stop()
+
+    if works_count == 0:
+        st.warning(f"Aucun travail trouvé pour {person_name} ({orcid_input}). Le comparateur nécessite des travaux pour fonctionner.")
         st.stop()
     
     if importlib.util.find_spec("transformers") is None and importlib.util.find_spec("references_tractor") is None:

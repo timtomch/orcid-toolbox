@@ -13,17 +13,26 @@ import pandas as pd
 
 # Format a timestamp (in milliseconds since epoch) to a human-readable date string.
 # If freshness is True, append a colored dot indicating how recent the date is.
-def format_timestamp(timestamp: str, freshness: bool = False) -> str:
+# If return_status is True, returns a tuple (formatted_string, status) where status is "Fresh", "Aging", "Stale", or None.
+# Otherwise, returns just the formatted string for backward compatibility.
+def format_timestamp(timestamp: str, freshness: bool = False, return_status: bool = False) -> str | tuple[str, Optional[str]]:
 	output_string= datetime.fromtimestamp(float(timestamp)/1000).strftime('%Y-%m-%d')
+	output_freshness: Optional[str] = None
 	if freshness:
 		delta = datetime.now() - datetime.fromtimestamp(float(timestamp)/1000)
 		days = delta.days
 		if days > 365 * 2:
 			output_string += " 🔴"
+			output_freshness = "stale"
 		elif days > 365:
 			output_string += " 🟡"
+			output_freshness = "aging"
 		else:
 			output_string += " 🟢"
+			output_freshness = "fresh"
+	
+	if return_status:
+		return (output_string, output_freshness)
 	return output_string
 
 _DOI_RE = re.compile(r"(10\.\d{4,9}/\S+)", re.IGNORECASE)
