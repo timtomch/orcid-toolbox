@@ -25,7 +25,7 @@ with st.sidebar:
     st.header("Statut")
 
 
-if st.query_params and "tab" in st.query_params and st.query_params["tab"] in ["activites", "resume", "suggestions"]:
+if st.query_params and "tab" in st.query_params and st.query_params["tab"] in ["works", "activites", "resume", "suggestions"]:
     match st.query_params["tab"]:
         case "activites":
             default_tab = "Autres activités"
@@ -33,6 +33,8 @@ if st.query_params and "tab" in st.query_params and st.query_params["tab"] in ["
             default_tab = "Résumé"
         case "suggestions":
             default_tab = "Suggestions"
+        case "works":
+            default_tab = "Travaux"
 else:
     default_tab = "Résumé"
 
@@ -176,7 +178,8 @@ orcid_summary_df = pd.DataFrame([
         'educations_last_modified': data['summary_educations']['last_modified'] if data['summary_educations'] else None,
         'fundings_count': data['summary_fundings']['count'] if data['summary_fundings'] else 0,
         'fundings_last_modified': data['summary_fundings']['last_modified'] if data['summary_fundings'] else None,
-        'person_last_modified': format_timestamp(data['updated_person']) if data['updated_person'] else None
+        'person_last_modified': format_timestamp(data['updated_person']) if data['updated_person'] else None,
+        'drilldown' : '?tab=works&orcid=' + orcid_id
     }
     for orcid_id, data in st.session_state.orcid_data.items()
 ])
@@ -277,6 +280,7 @@ with tab_summary:
         st.dataframe(orcid_summary_df, column_config={
             "orcid": None,
             "url": st.column_config.LinkColumn("ORCID", display_text="https://orcid.org/(.*)"),
+            "drilldown": st.column_config.LinkColumn("Détails Travaux", display_text=":material/open_in_new:"),
             "person_name": "Nom",
             "works_count": "Nbre travaux",
             "works_last_modified": "Modif. travaux",
@@ -289,7 +293,7 @@ with tab_summary:
             "person_last_modified": "Modif. profil"
             },
             column_order=[
-                "url", "person_name","person_last_modified","works_count","works_last_modified","employment_last_modified",
+                "url", "person_name","person_last_modified","works_count","works_last_modified","drilldown","employment_last_modified",
                 "educations_last_modified","fundings_last_modified"],
             height="content",
             hide_index=True)
