@@ -65,7 +65,7 @@ if "orcid_list" not in st.session_state:
         col_input, col_file = st.columns(2)
 
         with col_input:
-            orcid_input = st.text_input("Renseignez votre numéro ORCID (séparez plusieurs ORCIDs par des virgules):", key="orcid_input_field")
+            orcid_input = st.text_input("Renseignez un numéro ORCID (ou séparez plusieurs ORCIDs par des virgules):", key="orcid_input_field")
 
         with col_file:
             orcid_file = st.file_uploader("Ou téléversez un fichier (format texte, ORCIDs séparés par des virgules ou un par ligne):", type=["txt"], key="orcid_file_upload")
@@ -74,8 +74,12 @@ if "orcid_list" not in st.session_state:
         orcid_list_from_file = []
         if orcid_file:
             file_content = orcid_file.read().decode("utf-8")
-            # Parse by newlines and commas
+            # Parse by newlines and commas, removing comments
             for line in file_content.split('\n'):
+                # Remove comments prefaced by #
+                if '#' in line:
+                    line = line.split('#')[0]
+                # Now parse the remaining content
                 for orcid in line.split(','):
                     cleaned = orcid.strip()
                     if cleaned:
