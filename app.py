@@ -20,7 +20,7 @@ with st.sidebar:
     ''')
 
     if "orcid_list" in st.session_state:
-        st.button("Changer d'ORCID", type="secondary", on_click=reset_session_state)
+        st.button("Réinitialiser", type="secondary", on_click=reset_session_state)
 
     st.header("Statut")
 
@@ -131,6 +131,8 @@ if 'orcid_data' not in st.session_state:
     st.session_state.orcid_data = {}
 
 # Process each ORCID and store data
+progress_text = "Récupération des données ORCID..."
+multifile_progress = st.progress(0, text=progress_text)
 for idx, orcid_input in enumerate(orcid_list):     
     # Skip if already loaded
     if orcid_input not in st.session_state.orcid_data:
@@ -175,6 +177,7 @@ for idx, orcid_input in enumerate(orcid_list):
                 'summary_fundings': summary_fundings,
                 'updated_person': updated_person
             }
+            multifile_progress.progress((idx + 1) / len(orcid_list), text=progress_text + f" ({idx + 1}/{len(orcid_list)})")
     
     # Show status in sidebar
     if st.session_state.orcid_data[orcid_input]['works_count'] > 0:
@@ -184,6 +187,7 @@ for idx, orcid_input in enumerate(orcid_list):
         with st.sidebar:
             st.info(f"Profil ORCID chargé {orcid_input} (0 travaux)")
 
+multifile_progress.empty()
 # For backward compatibility with single ORCID code
 if len(orcid_list) == 1:
     orcid_input = orcid_list[0]
@@ -334,7 +338,7 @@ with tab_summary:
         st.dataframe(orcid_summary_df, column_config={
             "orcid": None,
             "url": st.column_config.LinkColumn("ORCID", display_text="https://orcid.org/(.*)"),
-            "drilldown": st.column_config.LinkColumn("Détails Travaux", display_text=":material/open_in_new:"),
+            "drilldown": st.column_config.LinkColumn("Ouvrir détails", display_text=":material/open_in_new:"),
             "person_name": "Nom",
             "works_count": "Travaux",
             "works_last_modified": "Màj travaux",
@@ -379,8 +383,18 @@ with tab_compare:
         if refs_file:
             source_refs = refs_file.read().decode("utf-8")
             
+            # Create progress bar for reference extraction
+            extraction_progress = st.progress(0, text="Extraction des références en cours...")
+            
+            def update_progress(current, total):
+                progress_value = current / total if total > 0 else 0
+                extraction_progress.progress(progress_value, text=f"Traitement des références... ({current}/{total})")
+            
             # Extract and process references
-            screened_refs, invalid_refs = extract_and_process_references(source_refs)
+            screened_refs, invalid_refs = extract_and_process_references(source_refs, progress_callback=update_progress)
+            
+            # Clear progress bar when done
+            extraction_progress.empty()
 
             with st.sidebar:
                 st.success(f"{len(screened_refs)} références valides extraites, {len(invalid_refs)} références invalides ignorées.")

@@ -197,21 +197,26 @@ def extract_ner_entities(text: str) -> Dict[str, List[str]]:
 
 
 # Main function to extract and process references
-def extract_transformer(text: str) -> Tuple[List[Dict], List[Dict]]:
+def extract_transformer(text: str, progress_callback=None) -> Tuple[List[Dict], List[Dict]]:
 
     screened_refs = extract_references_from_text(text)
     invalid_refs = []
+    total_refs = len(screened_refs)
 
     for i, ref in enumerate(screened_refs):
         ref['ref_number'] = i
         ref_text = ref["text"]
         ref_ner = extract_ner_entities(ref_text)
         ref['ner'] = ref_ner
+        
+        # Report progress if callback is provided
+        if progress_callback:
+            progress_callback(i + 1, total_refs)
     
     return screened_refs, invalid_refs
 
 
-def extract_references_tractor(text: str) -> Tuple[List[Dict], List[Dict]]:
+def extract_references_tractor(text: str, progress_callback=None) -> Tuple[List[Dict], List[Dict]]:
     # Lazy imports to avoid loading nltk at module import time
     from references_tractor import ReferencesTractor
     from references_tractor.utils.span import extract_references_and_mentions
@@ -229,21 +234,26 @@ def extract_references_tractor(text: str) -> Tuple[List[Dict], List[Dict]]:
     screened_refs = prescreen_references(references, ref_tractor.prescreening_pipeline)
     invalid_refs = [r for r in references if r not in screened_refs]
     
+    total_refs = len(screened_refs)
     # Add reference numbers and process NER
     for i, ref in enumerate(screened_refs, start=1):
         ref['ref_number'] = i
         ref_text = ref["text"]
         ref_ner = ref_tractor.process_ner_entities(ref_text)
         ref['ner'] = ref_ner
+        
+        # Report progress if callback is provided
+        if progress_callback:
+            progress_callback(i, total_refs)
     
     return screened_refs, invalid_refs
 
 # If references-tractor package is available locally, use it; otherwise, fall back to transformer-based extraction
-def extract_and_process_references(text: str) -> Tuple[List[Dict], List[Dict]]:
+def extract_and_process_references(text: str, progress_callback=None) -> Tuple[List[Dict], List[Dict]]:
     if importlib.util.find_spec("references_tractor"):
-        return extract_references_tractor(text)
+        return extract_references_tractor(text, progress_callback)
     elif importlib.util.find_spec("transformers"):
-        return extract_transformer(text)
+        return extract_transformer(text, progress_callback)
     else:
         raise ImportError("Erreur, une des bibliothèques nécessaires n'est pas installée. Veuillez installer 'references-tractor' ou 'transformers'.")
 
